@@ -1,5 +1,7 @@
 # FC<sup>2</sup> ~ FCSquare ~ Fuzzy Calculus Core 
 
+Software package for fuzzy relational calculus tasks with applications.
+
 This package is created with the highly appreciated theoretical help and under the supervision of Prof. DSc. Ketty Peeva.
 
 ## Theoretical results and methods can be found in:
