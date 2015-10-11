@@ -151,7 +151,31 @@ classdef fuzzyMatrix < double
             %Implements 'lukasiewicz' composition.
             result = fcompose(a,b,'min','fimpl');
         end
-        function result = is_lincomb(type,a,b)
+        function result = maxlukasiewicz(a,b)
+            %Implements  'max - lukasiewicz' composition.
+            result = fcompose(a,b,'max','ftnorml');
+        end
+        function result = minprobabilistic(a,b)
+            %Implements  'min - probabilistic sum' composition.
+            result = fcompose(a,b,'min','fprobabilisticsum');
+         end
+         function result = minbounded(a,b)
+            %Implements  'min - bounded sum' composition.
+            result = fcompose(a,b,'min','fboundedsum');
+         end
+         function result = maxdelta(a,b)
+            %Implements  'max - delta' composition.
+            result = fcompose(a,b,'max','fdelta');
+         end
+         function result = maxgama(a,b)
+            %Implements  'max - gama' composition.
+            result = fcompose(a,b,'max','fgama');
+         end
+         function result = not(a)
+             %Implements 'fuzzy negation'
+             result = 1-a;
+         end 
+             function result = is_lincomb(type,a,b)
             %Check for a linear combinations according some composition.
             %First parameter should be composition (ex: 'maxmin' or
             %'minmax');

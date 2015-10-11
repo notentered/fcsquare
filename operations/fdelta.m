@@ -1,21 +1,21 @@
-        %Calculate alpha operation.
-        function result = falpha(a,b)
+        %Calculate delta operation.
+        function result = fdelta(a,b)
             switch nargin
                 case 1
                     a = double(a);
                     if size(a,1) == 1
-                        result = 1;
-                        for i = 1:size(a,2)
-                            if result > a(i)
-                                result = a(i);
+                        result = a(1);
+                        for i = 2:size(a,2)
+                            if (a(i) - result) > 0
+                                result = a(i) - result;
                             else
-                                result = 1;
+                                result = 0;
                             end
                         end
                     else
-                        result = ones(1,size(a,2));
+                        result = zeros(1,size(a,2));
                         for i = 1:size(a,2)
-                            result(i) = falpha(fuzzyMatrix(a(:,i)'));
+                            result(i) = fdelta(fuzzyMatrix(a(:,i)'));
                         end
                     end
                 case 2
@@ -24,8 +24,8 @@
                         error('Matrix dimensions must agree.');
                     end
         
-                    result = ones(size(a));
-                    result(a>b) = b(a>b);
+                    result = zeros(size(a));
+                    result(b - a > 0) = (b(b - a > 0) - a(b - a > 0)); 
             end
             result = fuzzyMatrix(result);
         end

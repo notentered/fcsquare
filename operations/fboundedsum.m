@@ -1,13 +1,13 @@
-        %Calculate alpha operation.
-        function result = falpha(a,b)
+        %Calculate Bounded sum.
+        function result = fboundedsum(a,b)
             switch nargin
                 case 1
                     a = double(a);
                     if size(a,1) == 1
-                        result = 1;
-                        for i = 1:size(a,2)
-                            if result > a(i)
-                                result = a(i);
+                        result = a(1);
+                        for i = 2:size(a,2)
+                            if (result + a(i)) < 1
+                                result = result + a(i);
                             else
                                 result = 1;
                             end
@@ -15,7 +15,7 @@
                     else
                         result = ones(1,size(a,2));
                         for i = 1:size(a,2)
-                            result(i) = falpha(fuzzyMatrix(a(:,i)'));
+                            result(i) = fboundedsum(fuzzyMatrix(a(:,i)'));
                         end
                     end
                 case 2
@@ -25,7 +25,7 @@
                     end
         
                     result = ones(size(a));
-                    result(a>b) = b(a>b);
+                    result(a + b < 1) = (a(a + b < 1) + b(a + b < 1));
             end
             result = fuzzyMatrix(result);
         end
