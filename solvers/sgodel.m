@@ -1,5 +1,7 @@
-%Solve fuzzy linear systems of equations/inequalities for systems with
-%Godel composition.
+% Solve fuzzy linear systems of equations/inequalities for systems with
+% Godel composition.
+% This is the inverse problem for the min-alpha composition, aka
+% min - Godel_implication, aka min - ->G, where x ->G y = (y if x > y; 1 otherwize)
 function sol = sgodel(a,b,inequalities,full)
     if ~(size(a,1) == length(b))
         error('Inner matrix dimensions must agree.');

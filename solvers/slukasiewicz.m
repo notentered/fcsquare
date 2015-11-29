@@ -1,5 +1,7 @@
-%Solve fuzzy linear systems of equations/inequalities for systems with
-%Lukasiewicz composition.
+% Solve fuzzy linear systems of equations/inequalities for systems with
+% Lukasiewicz composition.
+% This is the inverse problem for the min-fimpl composition, aka
+% min - Lucasiewicz_implication, aka min - ->L, where x ->L y = min(1, 1-x+y)
 function sol = slukasiewicz(a,b,inequalities,full)
     if ~(size(a,1) == length(b))
         error('Inner matrix dimensions must agree.');

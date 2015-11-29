@@ -1,5 +1,7 @@
-%Solve fuzzy linear systems of equations/inequalities for systems with
-%Goguen composition.
+% Solve fuzzy linear systems of equations/inequalities for systems with
+% Goguen composition.
+% This is the inverse problem for the min-diamond composition, aka
+% min - Goguen_implication, aka min - ->P, where x ->P y = (y/x if x > y; 1 otherwize)
 function sol = sgoguen(a,b,inequalities,full)
     if ~(size(a,1) == length(b))
         error('Inner matrix dimensions must agree.');
