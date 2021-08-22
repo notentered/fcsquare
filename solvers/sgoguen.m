@@ -5,7 +5,7 @@
 function sol = sgoguen(a,b,inequalities,full)
     if ~(size(a,1) == length(b))
         error('Inner matrix dimensions must agree.');
-    end;
+    end
 
     sol.rows = size(a,1);
     sol.cols = size(a,2);
@@ -50,7 +50,7 @@ function sol = sgoguen(a,b,inequalities,full)
         sol.exist = false;
         sol.contradict = find(sol.ind' == 0);
         return;
-    end;
+    end
     
     sol.exist = true;
     
@@ -60,7 +60,7 @@ function sol = sgoguen(a,b,inequalities,full)
     end
     
     %Domination
-    sol.dominated = find(b==1);
+    sol.dominated = find(b==1)';
     for i = 2:sol.rows
         for ii = i-1:-1:1
             if isempty(sol.dominated(sol.dominated == ii))
@@ -75,12 +75,18 @@ function sol = sgoguen(a,b,inequalities,full)
             end
         end
     end
+
+    % unique is added here as sometimes some indexes may repeat. Probably
+    % need to add it everywhere or find other way to add the indexes
+    % Worth checking if unique actually sorts the array as if it does, we
+    % may remove the sort() after
+    sol.dominated = unique(sol.dominated);
+
     for i = sort(sol.dominated, 'descend')
        sol.help(i,:) = [];
     end
-
     sol.help_rows = size(sol.help,1);
-    
+
     %Find greater solution (depth-first-search)
     if sol.help_rows == 0
         sol.gr = ones(sol.cols,1);
