@@ -3,7 +3,7 @@
 function sol = sminmax(a,b,inequalities,full)
     if ~(size(a,1) == length(b))
         error('Inner matrix dimensions must agree.');
-    end;
+    end
     
     if nargin < 3
         inequalities = 0;
@@ -17,14 +17,16 @@ function sol = sminmax(a,b,inequalities,full)
     sol.cols = size(a,2);
 
     sol.help = ones(sol.rows,sol.cols);
+    sol.contribution = false(sol.rows,sol.cols);
     sol.low = zeros(sol.cols, 1);
     sol.ind = zeros(sol.rows, 1);
     
     %Preprocessing
     for j = 1:sol.cols
         for i = 1:sol.rows
-            if a(i,j) <= b(i) && b(i) < 1
+            if a(i,j) <= b(i)
                 sol.help(i,j) = b(i);
+                sol.contribution(i,j) = true;
             end
         end
     end
@@ -35,18 +37,20 @@ function sol = sminmax(a,b,inequalities,full)
         [sortedb,ii] = sort(b,'descend');
         col_max = 0;
         for i = ii'
-            if (sol.help(i,j) < 1) && (a(i,j) ~= b(i))
+            if (sol.contribution(i,j) == true) && (a(i,j) ~= b(i))
                 col_max = sol.help(i,j);
                 break;
             end
         end
         
         %All elemnts lower than x_low(j) should be even to 1.
-        sol.help(sol.help(:,j) < col_max, j) = 1;
-        
+        mask = sol.help(:,j) < col_max;
+        sol.help(mask, j) = 1;
+        sol.contribution(mask, j) = false;
+
         sol.low(j) = col_max;
         
-        indsolved = find(sol.help(:,j) < 1);
+        indsolved = find(sol.contribution(:,j) == true);
         sol.ind(indsolved) = sol.ind(indsolved) + 1;
     end
     
@@ -56,7 +60,7 @@ function sol = sminmax(a,b,inequalities,full)
             sol.exist = false;
             sol.contradict = find(sol.ind' == 0);
             return;
-        end;
+        end
     end
     
     sol.exist = true;
@@ -80,8 +84,8 @@ function sol = sminmax(a,b,inequalities,full)
     for i = 2:sol.rows
         for ii = i-1:-1:1
             if isempty(sol.dominated(sol.dominated == ii))
-                positivej = find(sol.help(i,:) < 1);
-                positivejj = find(sol.help(ii,:) < 1);
+                positivej = find(sol.contribution(i,:) == true);
+                positivejj = find(sol.contribution(ii,:) == true);
                 if (all(ismember(positivejj,positivej))) && (all(sol.help(ii,positivejj) <= sol.help(i,positivejj)))
                     sol.dominated = [i sol.dominated];
                     break;
@@ -91,8 +95,11 @@ function sol = sminmax(a,b,inequalities,full)
             end
         end
     end
+    
     for i = sort(sol.dominated, 'descend')
        sol.help(i,:) = [];
+       sol.contribution(i,:) = [];
+       b(i) = [];
     end
 
     sol.help_rows = size(sol.help,1);
@@ -100,28 +107,29 @@ function sol = sminmax(a,b,inequalities,full)
     %Find greater solutions (depth-first-search)
     sol.gr = [];
     marked = zeros(sol.help_rows,1);
-    obtain_gr(1,ones(sol.cols,1),marked);
-    
+    [sortedb,ii] = sort(b);
+    obtain_gr(ii(1),ones(sol.cols,1),marked);
+   
     function obtain_gr(i, gr, marked)
-        for jj = find(sol.help(i,:)<1)
+        for jj = find(sol.contribution(i,:) == true)
             ngr = gr;
             ngr(jj) = sol.help(i,jj);
             nmarked = marked;
-            nmarked(sol.help(:,jj)<1) = 1;
+            nmarked(sol.contribution(ii,jj) ==  true) = 1;
             nonmarked = find(nmarked==0);
             if isempty(nonmarked)
                 add_gr(ngr);
             else
-                obtain_gr(nonmarked(1),ngr,nmarked);
+                obtain_gr(ii(nonmarked(1)),ngr,nmarked);
             end
         end
     end
 
     function add_gr(gr)
-        for k = 1:size(sol.gr, 2)
-            if all(gr <= sol.gr(:,k))
+        for k = size(sol.gr, 2):-1:1
+            if all(gr >= sol.gr(:,k))
                 sol.gr(:,k) = [];
-            elseif all(sol.gr(:,k) <= gr)
+            elseif all(sol.gr(:,k) >= gr)
                 return;
             end
         end

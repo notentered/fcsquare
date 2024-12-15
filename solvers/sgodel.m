@@ -12,36 +12,75 @@ function sol = sgodel(a,b,inequalities,full)
     sol.cols = size(a,2);
 
     sol.help = ones(sol.rows,sol.cols);
+    sol.contribution = false(sol.rows, sol.cols);
     sol.low = zeros(sol.cols, 1);
     sol.ind = zeros(sol.rows, 1);
     
     % Preprocessing
+    % ToDo: We actually may need to have two separate preprocessing steps everywhere
+    %       One to set the help values and one to set the contributing elements.
+    % ToDo: "contribution" may not be the best strategy here. We actually
+    %       have intervals in which x_i can follow. So low, gr will take
+    %       one of its ends.
+    % ToDo: The help matrix start to looks a bit messy again. We pun in
+    %       there the possible values for the lowest solution, while we
+    %       know that for the upper solutions we can just use 1. It will be
+    %       vise-versa in max-something case. How about if we use two
+    %       matrices instead - one for potential lower values and one for
+    %       potential upper values? Or can we make this calculations "on
+    %       the fly"?
     for j = 1:sol.cols
         for i = 1:sol.rows
-            if true || a(i,j) > b(i) % ToDo: Fix (true || xxx);
-                sol.help(i,j) = min(a(i,j), b(i));
+            if a(i,j) <= b(i)
+                if b(i) == 1
+                    sol.contribution(i,j) = true;
+                else
+                    sol.contribution(i,j) = false;
+                end
+                sol.help(i,j) = a(i,j);
+            else
+                sol.contribution(i,j) = true;
+                sol.help(i,j) = b(i);
             end
+            
         end
     end
-    
+
+    % Interesting edge case. If b == 1, then we can take any maximal a_ij for x_i
+    % ToDo: It may happen to have similar cases in the other compositions
+    %       which we are covering with other logic. E.g. the previous usage
+    %       of E-type coefficients.
+    % ToDo: Maybe consider general edge cases handling
+    % ToDo: Maybe we just need to define intervals for every x,
+    %       non-contradicting the required b
+
     if (nargin >= 3) && (inequalities == true)
         sol.low = zeros(rows,1);
     else
         % Find the lower solution
         for j = 1:sol.cols
             % Takes the maximal element, for the j-th column of A.
-            col_max = max(sol.help(:,j));
+            % col_max = max(sol.help(sol.contribution(:,j), j));
+            col_max = max(sol.help(:, j));
             
             if ~isempty(col_max)
                 sol.low(j) = col_max;                
-                sol.help(sol.help(:,j) + eps < col_max, j) = 1;
+                mask = sol.contribution(:,j) & (sol.help(:,j) + eps < col_max);
+                sol.help(mask, j) = col_max;
+                sol.contribution(mask & (b ~= 1), j) = false;
+                sol.help((b == 1), j) = 1;
+            else
+                sol.low(j) = max(sol.help(:,j));
             end
             
             % Next row is because we cannot compare real numbers directly (a
             % presition problem)
-            indsolved = find(abs(sol.help(:,j) - sol.low(j)) <= eps);
+            % ToDo: We can now use precision aware comparison if we compare
+            %       instances of fuzzyMatrix
+            indsolved = find(sol.contribution(:,j) & (abs(sol.help(:,j) - sol.low(j)) <= eps));
             sol.ind(indsolved) = sol.ind(indsolved) + 1;
         end
+        sol.ind(b == 1) = sol.ind(b == 1) + 1;
     end    
     
     % Check if the system is consistent
@@ -59,13 +98,14 @@ function sol = sgodel(a,b,inequalities,full)
     end
 
     % Domination
-    sol.dominated = find(b==1);
-    % sol.dominated = [];
-    for i = 2:(sol.rows-height(sol.dominated)) % ToDo: FIX - This is stupid. Let me check if I, at least sort the rows. If yes, this should work in any case. If not it will not work. It will be better to just remove the rows!
+    sol.dominated = [];
+    for i = 2:sol.rows
+        if b(i) == 1, continue; end 
         for ii = i-1:-1:1
+            if b(ii) == 1, continue; end 
             if isempty(sol.dominated(sol.dominated == ii))
-                positivej = find(sol.help(i,:) < 1);
-                positivejj = find(sol.help(ii,:) < 1);
+                positivej  = find(sol.contribution(i,:) == true);
+                positivejj = find(sol.contribution(ii,:) == true);
                 if (all(ismember(positivejj,positivej))) && (all(sol.help(ii,positivejj) <= sol.help(i,positivejj)))
                     sol.dominated = [i sol.dominated];
                     break;
@@ -78,6 +118,8 @@ function sol = sgodel(a,b,inequalities,full)
     
     for i = sort(sol.dominated, 'descend')
        sol.help(i,:) = [];
+       sol.contribution(i,:) = [];
+       b(i) = [];
     end
 
     sol.help_rows = size(sol.help,1);
@@ -88,15 +130,16 @@ function sol = sgodel(a,b,inequalities,full)
     else
         sol.gr = [];
         marked = zeros(sol.help_rows,1);
-        obtain_gr(1,ones(sol.cols,1),marked);
+        [sortedb,ii] = sort(b, 'ascend');
+        obtain_gr(ii(1),ones(sol.cols,1),marked);
     end
     
     function obtain_gr(i, gr, marked)
-        for jj = find(sol.help(i,:)<1)
+        for jj = find(sol.contribution(i,:))
             ngr = gr;
             ngr(jj) = sol.help(i,jj);
             nmarked = marked;
-            nmarked(sol.help(:,jj)<1) = 1;
+            nmarked(sol.contribution(:,jj)) = 1;
             nonmarked = find(nmarked==0);
             if isempty(nonmarked)
                 add_gr(ngr);
@@ -107,10 +150,12 @@ function sol = sgodel(a,b,inequalities,full)
     end
 
     function add_gr(gr)
-        for k = 1:size(sol.gr, 2)
-            if all(gr >= sol.gr(:,k))
+        gr = fuzzyMatrix(gr);
+        for k = size(sol.gr, 2):-1:1
+            gr_j = fuzzyMatrix(sol.gr(:,k));
+            if all(gr >= gr_j)
                 sol.gr(:,k) = [];
-            elseif all(sol.gr(:,k) >= gr)
+            elseif all(gr_j >= gr)
                 return;
             end
         end

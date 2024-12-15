@@ -1,0 +1,26 @@
+% Fixture with small literature-based examples for fuzzyMachine.
+
+classdef fuzzyMachineFixture < matlab.unittest.fixtures.Fixture
+    properties
+        Examples
+    end
+
+    methods
+        function setup(fixture)
+            % Simple 2-state machine with 2 letters, maxmin composition
+            % This is just an example; adjust matrices to match literature
+            A1 = fuzzyMatrix([0.2 0.5; 0.5 0.2]);
+            A2 = fuzzyMatrix([0.3 0.7; 0.7 0.3]);
+
+            fixture.Examples{1} = struct( ...
+                'initial_set', {{A1, A2}}, ...
+                'composition', 'maxmin', ...
+                'postprocess', 'minimize', ...
+                'word_length', -1, ...
+                'full', false, ...
+                'expected_behavior', fuzzyMatrix([1; 0.7; 0.5]), ...
+                'expected_letters', 2 ...
+            );
+        end
+    end
+end

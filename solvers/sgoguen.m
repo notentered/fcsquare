@@ -5,7 +5,7 @@
 function sol = sgoguen(a,b,inequalities,full)
     if ~(size(a,1) == length(b))
         error('Inner matrix dimensions must agree.');
-    end;
+    end
     
     if nargin < 3
         inequalities = 0;
@@ -25,7 +25,7 @@ function sol = sgoguen(a,b,inequalities,full)
     %Preprocessing
     for j = 1:sol.cols
         for i = 1:sol.rows
-            if a(i,j) ~= 0
+            if true || a(i,j) ~= 0
                 sol.help(i,j) = a(i,j)*b(i);
             end
         end
@@ -34,8 +34,9 @@ function sol = sgoguen(a,b,inequalities,full)
     %Find the lower solution
     for j = 1:sol.cols
         %Takes the maximal element, for the j-th column of A.
-        col_max = max(sol.help(sol.help(:,j) < 1, j));
-        
+        % col_max = max(sol.help(sol.help(:,j) < 1, j));
+        col_max = max(sol.help(:, j));
+
         if ~isempty(col_max)
             sol.low(j) = col_max;
             
@@ -47,7 +48,12 @@ function sol = sgoguen(a,b,inequalities,full)
         %presition problem)
         indsolved = find(abs(sol.help(:,j) - sol.low(j)) <= eps);
         sol.ind(indsolved) = sol.ind(indsolved) + 1;
+        
+        % ToDo: Decide if we are going to rely on "contribution"!
+        %       In theory not needed but we still need to apply logic.
+        sol.ind(b == 1) = sol.ind(b == 1) + 1;
     end
+    sol.help(b == 1, :) = 1; % Do we need this explicitly?
     
     if inequalities == -1 || inequalities == 0
         %Check if the system is consistent
@@ -75,10 +81,16 @@ function sol = sgoguen(a,b,inequalities,full)
     end
     
     %Domination
-    sol.dominated = find(b==1)';
+    % sol.dominated = find(b==1)';
+    sol.dominated = [];
     for i = 2:sol.rows
+        if b(i) == 1, continue; end 
         for ii = i-1:-1:1
+            if b(ii) == 1, continue; end 
             if isempty(sol.dominated(sol.dominated == ii))
+                if b(i) == 0 || b(ii) == 0
+                    continue;
+                end
                 positivej = find(sol.help(i,:) < 1);
                 positivejj = find(sol.help(ii,:) < 1);
                 if (all(ismember(positivejj,positivej))) && (all(sol.help(ii,positivejj) <= sol.help(i,positivejj)))
@@ -98,7 +110,8 @@ function sol = sgoguen(a,b,inequalities,full)
     sol.dominated = unique(sol.dominated);
 
     for i = sort(sol.dominated, 'descend')
-       sol.help(i,:) = [];
+        sol.help(i,:) = [];
+        b(i) = [];
     end
     
     sol.help_rows = size(sol.help,1);
@@ -109,30 +122,39 @@ function sol = sgoguen(a,b,inequalities,full)
     else
         sol.gr = [];
         marked = zeros(sol.help_rows,1);
-        obtain_gr(1,ones(sol.cols,1),marked);
+        [sortedb,ii] = sort(b + (b==0)*42, 'ascend');
+        obtain_gr(ii(1),ones(sol.cols,1),marked);
     end
     
     function obtain_gr(i, gr, marked)
-        for jj = find(sol.help(i,:)<1)
+        % for jj = find(sol.help(i,:)<1 | (a(i,:) == 1 & b(i) == 1))
+        for jj = find(sol.help(i,:)<1 | (b(i) == 1))
             ngr = gr;
-            ngr(jj) = sol.help(i,jj);
+            if ngr(jj) == 1
+                ngr(jj) = sol.help(i,jj);
+            end
             nmarked = marked;
-            nmarked(sol.help(:,jj)<1) = 1;
+            nmarked(sol.help(ii,jj)<1 | b(i) == 1) = 1;
             nonmarked = find(nmarked==0);
             if isempty(nonmarked)
                 add_gr(ngr);
             else
-                obtain_gr(nonmarked(1),ngr,nmarked);
+                obtain_gr(ii(nonmarked(1)),ngr,nmarked);
             end
         end
     end
 
     function add_gr(gr)
+        gr = fuzzyMatrix(gr);
+        if ~all(goguen(fuzzyMatrix(a), gr) == goguen(fuzzyMatrix(a), sol.low))
+            return;
+        end
         % ToDo: If I want to see all *possible* solutions I can just comment the following "for". Probably need to remove this comment later.
-        for k = 1:size(sol.gr, 2)
-            if all(gr >= sol.gr(:,k))
+        for k = size(sol.gr, 2):-1:1
+            gr_j = fuzzyMatrix(sol.gr(:,k));
+            if all(gr >= gr_j)
                 sol.gr(:,k) = [];
-            elseif all(sol.gr(:,k) >= gr)
+            elseif all(gr_j >= gr)
                 return;
             end
         end

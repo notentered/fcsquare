@@ -42,7 +42,7 @@
 %   pp 294-299, 2005.
 %   
 %   2. K. Peeva, Zl. Zahariev, Linear dependence in fuzzy algebra,
-%   Proceedings of 31th International Conference AMÅE, Sozopol June 2005
+%   Proceedings of 31th International Conference AMEE, Sozopol June 2005
 %   Softrade, Sofia 2006, ISBN 10: 954-334-032-3, pp. 71-83.
 %   
 %   3. K. Peeva, Zl. Zahariev, Software for Testing Linear Dependence in
@@ -50,17 +50,28 @@
 %   Science, Chalkidiki, 30 Sept -2 Oct 2005, ISBN 954 438 526 6, part I,
 %   pp 294-299, 2005.
 %   
-%   4. Z. Zahariev, “Solving Max-min Relational Equations. Software and
-%   Applications”, in International conference on Applications of
+%   4. Z. Zahariev, "Solving Max-min Relational Equations. Software and
+%   Applications", in International conference on Applications of
 %   Mathematics in Engineering and Economics, June 2008, Sozopol, Bulgaria,
 %   December 2008, pp 516-523.
 %   
 %   5. Z. Zahariev, Software package and API in MATLAB for working with
-%   fuzzy algebras, In International Conference „Applications of
-%   Mathematics in Engineering and Economics (AMEE'09)”, AIP Conference
+%   fuzzy algebras, In International Conference "Applications of
+%   Mathematics in Engineering and Economics (AMEE'09)", AIP Conference
 %   Proceedings, vol. 1184, G. Venkov, R. Kovatcheva, V. Pasheva (eds.)
 %   American Institute of Physics, ISBN 978-0-7354-0750-9, 2009, 434-350.
 classdef fuzzyMatrix < double
+    methods (Static)
+
+        function tol = localTol(da, db)
+            % To use in tollerance based calculations
+            % ToDo: Consider algorithms refactoring for robustness
+            scale = max([1; abs(da(:)); abs(db(:))]);
+            tol = 10 * eps(scale);
+        end
+
+    end
+
     methods
 
         function obj = fuzzyMatrix(varargin)
@@ -86,18 +97,44 @@ classdef fuzzyMatrix < double
         end
 
         function result = eq(a, b)
-            % Custom eq (==) for fuzzyMatrix using EPS tolerance
-            result = abs(double(a) - double(b)) <= eps;
+            % Custom eq (==) for fuzzyMatrix using tolerance
+            da = double(a); db = double(b);
+            tol = fuzzyMatrix.localTol(da, db);
+            result = abs(da - db) <= tol;
         end
 
         function result = isequal(a, b)
-            % Custom isequal for fuzzyMatrix using EPS tolerance
+            % Custom isequal for fuzzyMatrix using tolerance
             result = all(a == b, 'all');
         end
 
         function result = isequaln(a, b)
-            % Custom isequaln for fuzzyMatrix using EPS tolerance
+            % Custom isequaln for fuzzyMatrix using tolerance
             result = isequal(a, b);
+        end
+
+        function result = lt(a, b)
+            da = double(a); db = double(b);
+            tol = fuzzyMatrix.localTol(da, db);
+            result = da < (db - tol);
+        end
+        
+        function result = le(a, b)
+            da = double(a); db = double(b);
+            tol = fuzzyMatrix.localTol(da, db);
+            result = da <= (db + tol);
+        end
+        
+        function result = gt(a, b)
+            da = double(a); db = double(b);
+            tol = fuzzyMatrix.localTol(da, db);
+            result = da > (db + tol);
+        end
+        
+        function result = ge(a, b)
+            da = double(a); db = double(b);
+            tol = fuzzyMatrix.localTol(da, db);
+            result = da >= (db - tol);
         end
 
         function result = plus(a,b)

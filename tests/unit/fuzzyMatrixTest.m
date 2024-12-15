@@ -8,8 +8,7 @@ classdef fuzzyMatrixTest < matlab.mock.TestCase
             
             testCase.verifyEqual(double(obj), []);
         end
-
-        function testMatrixInitialization(testCase)
+      function testMatrixInitialization(testCase)
             % Test initialization with a valid matrix
             data = [0.2, 0.5; 0.3, 0.7];
             obj = fuzzyMatrix(data);
