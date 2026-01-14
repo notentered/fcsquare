@@ -53,3 +53,623 @@ III. Direct and inverse problems resolution for fuzzy linear systems of equation
 IV. Solving fuzzy optimization problems.
 
 V. Fuzzy machines - find, minimize and reduce behavior and full behavior matrices.
+
+# Appendix Examples (Markdown)
+
+## Examples for the `fuzzyMatrix` module
+
+This section provides usage examples for the `fuzzyMatrix` module, including initialization, basic operations, and several types of fuzzy matrix composition.
+
+### Max-min composition of two fuzzy matrices
+
+```matlab
+% Create new random fuzzy matrix.
+>> A = fuzzyMatrix(rand(3))
+A =
+  3×3 fuzzyMatrix:
+  double data:
+    0.9649    0.9572    0.1419
+    0.1576    0.4854    0.4218
+    0.9706    0.8003    0.9157
+
+>> B = fuzzyMatrix(rand(3))
+B =
+  3×3 fuzzyMatrix:
+  double data:
+    0.7922    0.0357    0.6787
+    0.9595    0.8491    0.7577
+    0.6557    0.9340    0.7431
+
+% Compose two matrices with max-min composition
+>> C = maxmin(A,B)
+C =
+  3×3 fuzzyMatrix:
+  double data:
+    0.9572    0.8491    0.7577
+    0.4854    0.4854    0.4854
+    0.8003    0.9157    0.7577
+```
+
+### Max-$\varepsilon$ composition of two fuzzy matrices
+
+```matlab
+% Compose two matrices with max-epsilon composition
+>> C = maxepsilon(A,B)
+C =
+  3×3 fuzzyMatrix:
+  double data:
+    0.9595    0.9340    0.7431
+    0.9595    0.9340    0.7577
+    0.9595    0.9340         0
+```
+
+### Test for fuzzy linear combination with min-max composition
+
+```matlab
+>> coeffs = fuzzyMatrix(rand(3,1))
+coeffs =
+  3×1 fuzzyMatrix:
+  double data:
+    0.0344
+    0.4387
+    0.3816
+
+% Create a linear combination for testing purposes
+>> X = minmax(A, coeffs)
+X =
+  3×1 fuzzyMatrix:
+  double data:
+    0.3816
+    0.1576
+    0.8003
+
+% Validate that X is a linear combination of A
+>> is_lincomb('minmax', A, X)
+ans =
+  3×1 fuzzyMatrix:
+  double data:
+         0
+         0
+    0.3816
+```
+
+### Test for fuzzy linear dependence with min-max composition
+
+```matlab
+
+% Add the linear combination to the initial matrix A
+>> A_extended = fuzzyMatrix([double(A) double(X)])
+A_extended =
+  3×4 fuzzyMatrix:
+  double data:
+    0.9649    0.9572    0.1419    0.3816
+    0.1576    0.4854    0.4218    0.1576
+    0.9706    0.8003    0.9157    0.8003
+
+% Validate that the new matrix A is now linear dependant
+% Column 4 is a linear combination of the other columns
+>> is_linindep(A_extended, 'minmax', true)
+ans =
+     4
+```
+
+---
+
+## Examples for the `fuzzySystem` module
+
+This section provides example uses of the `fuzzySystem` class, illustrating how to construct and solve fuzzy relational systems under various compositions and inequality types.
+
+### Solving A  X = B using $\odot$ composition
+
+```matlab
+>> A = fuzzyMatrix([0.00, 0.20, 0.05, 0.00, 0.40, 0.00;
+                    0.10, 0.60, 0.30, 0.00, 0.20, 0.20;
+                    0.80, 0.48, 0.24, 0.48, 0.00, 0.00;
+                    0.30, 0.00, 0.00, 0.40, 0.80, 0.15;
+                    0.00, 0.00, 0.12, 0.20, 0.48, 0.10;
+                    0.50, 0.30, 0.00, 0.10, 0.60, 0.00]);
+
+>> B = fuzzyMatrix([0.10; 0.30; 0.24; 0.20; 0.12; 0.15]);
+
+% Create a new fuzzy system form A and B with max-product composition
+>> S = fuzzySystem('maxprod', A, B, [], true)
+S =
+  fuzzySystem with properties:
+    composition: 'maxprod'
+              a: [6×6 fuzzyMatrix]
+              b: [6×1 fuzzyMatrix]
+              x: [0×0 fuzzyMatrix]
+           full: 1
+   inequalities: 0
+
+>> S.solve_inverse();
+
+% Inspect the system solution
+>> S.x
+ans =
+  struct with fields:
+      rows: 6
+      cols: 6
+      help: [4×6 fuzzyMatrix]
+        gr: [6×1 fuzzyMatrix]
+       ind: [6×1 double]
+     exist: 1
+ dominated: [6 3]
+ help_rows: 4
+       low: [6×3 fuzzyMatrix]
+
+% The system is compatible
+>> S.x.exist
+ans =
+  logical
+    1
+
+% The greatest solution
+>> S.x.gr
+ans =
+  6×1 fuzzyMatrix:
+  double data:
+    0.3000
+    0.5000
+    1.0000
+    0.5000
+    0.2500
+    1.0000
+
+% All lower solutions
+>> S.x.low
+ans =
+  6×3 fuzzyMatrix:
+  double data:
+         0         0         0
+    0.5000    0.5000         0
+    1.0000         0    1.0000
+    0.5000         0         0
+         0    0.2500    0.2500
+         0         0         0
+```
+
+### Fast compatability check for the same system
+
+```matlab
+% Set the system to solve only for the greatest soltution
+>> S.full = false;
+
+>> S.solve_inverse();
+
+% Greates solution exists, so the system is compatible
+>> S.x
+ans =
+  6×1 fuzzyMatrix:
+  double data:
+    0.3000
+    0.5000
+    1.0000
+    0.5000
+    0.2500
+    1.0000
+```
+
+### Solving A \* X $\leq$ B using $\odot$ composition and the same A and B
+
+```matlab
+% Set the system as a A*X <= X inequalities system
+>> S.inequalities = -1;
+
+>> S.solve_inverse();
+
+>> S.x
+ans =
+  struct with fields:
+    rows: 6
+    cols: 6
+    help: [6×6 fuzzyMatrix]
+      gr: [6×1 fuzzyMatrix]
+     ind: [6×1 double]
+   exist: 1
+     low: [6×1 fuzzyMatrix]
+
+>> S.x.exist
+ans =
+  logical
+    1
+
+>> S.x.gr
+ans =
+  6×1 fuzzyMatrix:
+  double data:
+    0.3000
+    0.5000
+    1.0000
+    0.5000
+    0.2500
+    1.0000
+
+>> S.x.low
+ans =
+  6×1 fuzzyMatrix:
+  double data:
+     0
+     0
+     0
+     0
+     0
+     0
+```
+
+### Solving A \* X $\geq$ B using $\odot$ composition and the same A and B
+
+```matlab
+% Set the system as a A*X >= X inequalities system
+>> S.inequalities = 1;
+
+>> S.solve_inverse();
+
+>> S.x
+ans =
+  struct with fields:
+    rows: 6
+    cols: 6
+    help: [4×6 fuzzyMatrix]
+      gr: [6×1 fuzzyMatrix]
+     ind: [6×1 double]
+   exist: 1
+ dominated: [6 3]
+ help_rows: 4
+     low: [6×3 fuzzyMatrix]
+
+>> S.x.exist
+ans =
+  logical
+    1
+
+>> S.x.gr
+ans =
+  6×1 fuzzyMatrix:
+  double data:
+    1
+    1
+    1
+    1
+    1
+    1
+
+> S.x.low
+ans =
+  6×3 fuzzyMatrix:
+  double data:
+         0         0         0
+    0.5000    0.5000         0
+    1.0000         0    1.0000
+    0.5000         0         0
+         0    0.2500    0.2500
+         0         0         0
+```
+
+### Solving A \* X = B using Łukasiewicz composition
+
+```matlab
+% Similar example with max-lukasiewicz composition
+>> A = fuzzyMatrix([0.8, 0.1, 0.7, 0.9;
+                    0.9, 0.7, 0.2, 0.8;
+                    0.2, 0.8, 0.9, 0.7;
+                    0.3, 0.1, 0.0, 0.9]);
+
+>> B = fuzzyMatrix([0.5; 0.6; 0.7; 0.0]);
+
+>> S = fuzzySystem('maxlukasiewicz', A, B, [], true)
+S =
+  fuzzySystem with properties:
+    composition: 'maxlukasiewicz'
+              a: [4×4 fuzzyMatrix]
+              b: [4×1 fuzzyMatrix]
+              x: [0×0 fuzzyMatrix]
+           full: 1
+   inequalities: 0
+
+>> S.solve_inverse();
+
+>> S.x
+ans =
+  struct with fields:
+      rows: 4
+      cols: 4
+      help: [3×4 fuzzyMatrix]
+        gr: [4×1 fuzzyMatrix]
+       ind: [4×1 double]
+     exist: 1
+ dominated: 4
+ help_rows: 3
+       low: [4×3 fuzzyMatrix]
+
+>> S.x.exist
+ans =
+  logical
+    1
+
+>> S.x.gr
+ans =
+  4×1 fuzzyMatrix:
+  double data:
+    0.7000
+    0.9000
+    0.8000
+    0.1000
+
+>> S.x.low
+ans =
+  4×3 fuzzyMatrix:
+    double data:
+      0.7000    0.7000         0
+      0.9000         0    0.9000
+      0         0.8000    0.8000
+      0         0         0
+```
+
+---
+
+## Examples for the `fuzzyMachine` module
+
+### Initialize a fuzzy finite machine using $\odot$ composition
+
+```matlab
+>> m1=fuzzyMatrix([0 0.6 0.5; 0.6 0.1 0.5; 0.2 0.1 0.2]);
+>> m2=fuzzyMatrix([0 0 0; 0 0 0; 0.2 0.1 0.1])    
+>> m3=fuzzyMatrix([0.4 0.2 0.1; 0.3 0.4 0.1; 0 0 0])
+>> m4=fuzzyMatrix([0 0.3 0.2; 0.3 0.1 0.2; 0.1 0 0.1])
+
+% Create new fuzzy machine with initial state m1, ..., m4
+>> m = fuzzyMachine({m1,m2,m3,m4}, 'maxmin', 'none', 2, true)
+m =
+  fuzzyMachine with properties:
+        initial_set: {
+          [3×3 fuzzyMatrix]  [3×3 fuzzyMatrix]
+          [3×3 fuzzyMatrix]  [3×3 fuzzyMatrix]
+        }
+        composition: 'maxmin'
+               norm: 'max'
+             conorm: 'min'
+        postprocess: 'none'
+        word_length: 2
+               full: 1
+    behavior_matrix: []
+            letters: 3    
+```
+
+### Find full behavior for letters with length 2
+
+```matlab
+% Set the machine to find full behavior for words length = 2
+>> m.word_length = 2; m.full = true; m.postprocess = 'none';
+
+>> m.find_behavior
+
+>> m.behavior_matrix
+ans =
+  3×21 fuzzyMatrix:
+  double data:
+  Columns 1 through 6
+    1.0000    0.6000         0    0.4000    0.3000    0.6000
+    1.0000    0.6000         0    0.4000    0.3000    0.6000
+    1.0000    0.2000    0.2000         0    0.1000    0.2000
+
+  Columns 7 through 12    
+    0.2000    0.4000    0.3000         0         0         0
+    0.2000    0.4000    0.3000         0         0         0
+    0.2000    0.2000    0.2000    0.2000    0.1000    0.2000
+
+  Columns 13 through 18
+         0    0.4000    0.1000    0.4000    0.3000    0.3000
+         0    0.4000    0.1000    0.4000    0.3000    0.3000
+    0.2000         0         0         0         0    0.1000
+
+  Columns 19 through 21
+    0.2000    0.3000    0.3000
+    0.2000    0.3000    0.3000
+    0.1000    0.1000    0.1000
+```
+
+### Find minimized behavior for letters with arbitrary length
+
+```matlab
+% Set the machine to find minimized behavior with no word length limitations
+>> m.word_length = -1; m.full = false; m.postprocess = 'minimize';
+
+>> m.find_behavior
+
+>> m.behavior_matrix
+ans =
+  2×4 fuzzyMatrix:
+  double data:
+    1.0000    0.6000         0    0.4000
+    1.0000    0.6000         0    0.4000
+    1.0000    0.2000    0.2000         0
+```
+
+### Find reduced behavior for letters with arbitrary length
+
+```matlab
+% Set the machine to find reduced behavior with no word length limitations
+>> m.word_length = -1; m.full = false; m.postprocess = 'reduce';
+
+>> m.find_behavior
+
+>> m.behavior_matrix
+ans =
+  2×4 fuzzyMatrix:
+  double data:
+    1.0000    0.6000         0    0.4000
+    1.0000    0.2000    0.2000         0
+```
+
+---
+
+## Examples for the `fuzzyOptimizationProblem` module
+
+This section provides examples demonstrating the use of the `fuzzyOptimizationProblem` class to define, minimize and maximize fuzzy optimization problems.
+
+### Define a fuzzy optimization problem with $\odot$ composition constraints
+
+```matlab
+>> A = fuzzyMatrix([0.00, 0.20, 0.05, 0.00, 0.40, 0.00;
+                    0.10, 0.60, 0.30, 0.00, 0.20, 0.20;
+                    0.80, 0.48, 0.24, 0.48, 0.00, 0.00;
+                    0.30, 0.00, 0.00, 0.40, 0.80, 0.15;
+                    0.00, 0.00, 0.12, 0.20, 0.48, 0.10;
+                    0.50, 0.30, 0.00, 0.10, 0.60, 0.00]);
+
+>> B = fuzzyMatrix([0.10; 0.30; 0.24; 0.20; 0.12; 0.15]);
+
+>> S = fuzzySystem('maxprod', A, B, [], true);
+
+% Create new optimization task with parameters and fuzzy system S as constraints
+>> O = fuzzyOptimizationProblem([5, -4, 8, 2, -3, 7], S)
+O =
+  fuzzyOptimizationProblem with properties:
+             object: [5 -4 8 2 -3 7]
+        constraints: [1×1 fuzzySystem]
+    object_solution: []
+       object_value: []
+```
+
+### Minimization
+
+```matlab
+>> O.minimize()
+ans =
+  fuzzyOptimizationProblem with properties:
+             object: [5 -4 8 2 -3 7]
+        constraints: [1×1 fuzzySystem]
+    object_solution: [6×1 double]
+       object_value: -2.7500
+
+>> O.object_solution
+ans =
+         0
+    0.5000
+         0
+         0
+    0.2500
+         0
+
+>> O.object_value
+ans =
+   -2.7500
+```
+
+### Maximization
+
+```matlab
+>> O.maximize()
+ans =
+  fuzzyOptimizationProblem with properties:
+             object: [5 -4 8 2 -3 7]
+        constraints: [1×1 fuzzySystem]
+    object_solution: [6×1 double]
+       object_value: 16.7500
+
+>> O.object_solution
+ans =
+    0.3000
+         0
+    1.0000
+    0.5000
+    0.2500
+    1.0000
+
+>> O.object_value
+ans =
+   16.7500
+```
+
+---
+
+## Examples for access control and login anomaly
+
+This example demonstrates access control or login anomaly detection applications.
+
+For access control - four users are characterized by three policy attributes (e.g. KYC level, user role, and access context).
+
+Matrix $A$ represents at what level each user satisfies these polices. Vector $X$ represents how important those policies are. Vector $B$ represents the level of access for each user. Direct problem resolution represents at what degree the users can access the resources. Inverse problem resolution identifies all the possible policy combinations able to access the resources at some observed level.
+
+The same principle can by applied towards a login anomaly example. Here, four login attempts are evaluated against three indicators (e.g. time of login, location, and device type). Matrix $A$ gives the degree of normality of each attempt. Vector $X$ contains tolerance thresholds. Vector $B$ is the acceptability of each login. Direct problem resolution provides information about how normal a login is. Inverse problem resolution gives information about the desired acceptability levels.
+
+### Enter the policy values
+
+```matlab
+>> A = fuzzyMatrix([0.90, 0.60, 0.20;
+                   0.70, 0.80, 0.40;
+                   0.40, 0.50, 0.90;
+                   0.30, 0.70, 0.60]);
+>> X = fuzzyMatrix([0.80; 0.60; 0.70]);
+>> B = fuzzyMatrix([0.80; 0.70; 0.70; 0.60]);
+>> S = fuzzySystem('maxmin', A, [], X);
+```
+
+### Check access
+
+```matlab
+>> S.solve_direct
+ans =
+  fuzzySystem with properties:
+    composition: 'maxmin'
+              a: [4×3 fuzzyMatrix]
+              b: [4×1 fuzzyMatrix]
+              x: [3×1 fuzzyMatrix]
+           full: 0
+   inequalities: 0
+
+>> S.b
+ans =
+  4×1 fuzzyMatrix:
+  double data:
+    0.8000
+    0.7000
+    0.7000
+    0.6000
+```
+
+### Access diagnostic
+
+```matlab
+>> S.full = true;
+>> S.solve_inverse
+ans =
+  fuzzySystem with properties:
+    composition: 'maxmin'
+              a: [4×3 fuzzyMatrix]
+              b: [4×1 fuzzyMatrix]
+              x: [1×1 struct]
+           full: 1
+   inequalities: 0
+
+>> S.x
+ans =
+  struct with fields:
+    rows: 4
+    cols: 3
+    help: [2×3 fuzzyMatrix]
+      gr: [3×1 fuzzyMatrix]
+     ind: [4×1 double]
+   exist: 1
+ dominated: [4 2]
+ help_rows: 2
+     low: [3×1 fuzzyMatrix]
+
+>> S.x.gr
+ans =
+  3×1 fuzzyMatrix:
+  double data:
+    0.8000
+    0.6000
+    0.7000
+
+>> S.x.low
+ans =
+  3×1 fuzzyMatrix:
+  double data:
+    0.8000
+         0
+    0.7000
+```
+
