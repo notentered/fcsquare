@@ -30,7 +30,9 @@ function sol = slukasiewicz(a, b, inequalities, full)
     sol.help_rows = sol.rows;
 
     % Stage 1: I_L(a,x)>=b exactly when x>=max(0,a+b-1).
-    levels = max(0, a + b - 1);
+    % The equivalent a-(1-b) form preserves a exactly when b=1 instead
+    % of introducing cancellation through a+1-1.
+    levels = max(0, a - (1 - b));
     lower = max(levels, [], 1).';
 
     % Stage 2: select the requested monotone boundary and verify it by
@@ -61,7 +63,7 @@ function sol = slukasiewicz(a, b, inequalities, full)
             continue;
         end
         for j = 1:sol.cols
-            rawLevel = a(i, j) + b(i) - 1;
+            rawLevel = a(i, j) - (1 - b(i));
             if rawLevel < -tolerance
                 continue;
             end
@@ -109,7 +111,7 @@ function sol = slukasiewicz(a, b, inequalities, full)
         [~, position] = min(b(uncovered));
         row = uncovered(position);
         for column = 1:sol.cols
-            rawLevel = a(row, column) + b(row) - 1;
+            rawLevel = a(row, column) - (1 - b(row));
             if rawLevel < -tolerance
                 continue;
             end
