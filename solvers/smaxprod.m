@@ -1,153 +1,139 @@
-%Solve fuzzy linear systems of equations/inequalities for systems with
-%max-product composition.
-function sol = smaxprod(a,b,inequalities,full)
-    if ~(size(a,1) == length(b))
-        error('Inner matrix dimensions must agree.');
-    end
-    
+%SMAXPROD Solve max-product fuzzy systems of equations or inequalities.
+%   The solver uses the same four stages as smaxmin. Only the operation
+%   table changes: contribution levels are the quotients B(i)/A(i,j).
+function sol = smaxprod(a, b, inequalities, full)
     if nargin < 3
         inequalities = 0;
     end
-
     if nargin < 4
         full = false;
     end
-    
-    sol.rows = size(a,1);
-    sol.cols = size(a,2);
 
-    sol.help = fuzzyMatrix(zeros(sol.rows,sol.cols));
-    sol.contribution = false(sol.rows,sol.cols);
-    sol.gr = fuzzyMatrix(ones(sol.cols, 1));
+    b = b(:);
+    tolerance = 1e-12;
+    if size(a, 1) ~= numel(b)
+        error('smaxprod:DimensionMismatch', ...
+            'The number of rows in A must equal the length of B.');
+    end
+    if ~ismember(inequalities, [-1 0 1])
+        error('smaxprod:InvalidInequality', ...
+            'Inequalities must be -1, 0, or 1.');
+    end
+
+    sol.rows = size(a, 1);
+    sol.cols = size(a, 2);
+    sol.help = zeros(sol.rows, sol.cols);
+    sol.contribution = false(sol.rows, sol.cols);
     sol.ind = zeros(sol.rows, 1);
-    
-    %Preprocessing
-    for j = 1:sol.cols
-        for i = 1:sol.rows
-            % ToDo: Investigate all edge colutions for all operations,
-            % where x_i can be some interval and develop universal
-            % solution. E.g. Here if both a_ij and b_j are == 0, then the
-            % corresponding x_j can be whatever between 0 and 1. We take 1
-            % in the gr and 0 in low. Therefore here we assign 1 to the
-            % help matrix to produce the correct gr, but later we make them
-            % explicitly 0, to produce the right low(s)
+    sol.dominated = [];
+    sol.help_rows = sol.rows;
 
-            % ToDo: Add explicit examples in the tests with A = [0 0 0;...]
-            % and B = [0; 0; ...], and the same with everywhere "1"
-            if a(i,j) >= b(i)
-                sol.contribution(i,j) = true;
-                if a(i,j) == 0
-                    sol.help(i,j) = 1;
-                else
-                    sol.help(i,j) = b(i)/a(i,j);
-                end
+    % Stage 1: obtain the greatest vector that satisfies A o X <= B.
+    upper = ones(sol.cols, 1);
+    for j = 1:sol.cols
+        positiveRows = a(:, j) > 0;
+        if any(positiveRows)
+            upper(j) = min([1; b(positiveRows) ./ a(positiveRows, j)]);
+        end
+    end
+
+    % Stage 2: select the requested boundary and check consistency by
+    % direct composition. Zero coefficients never require division.
+    switch inequalities
+        case -1
+            sol.gr = upper;
+            sol.exist = true;
+        case 0
+            sol.gr = upper;
+            obtained = composeMaxProduct(a, sol.gr);
+            sol.exist = all(abs(obtained - b) <= tolerance);
+        case 1
+            sol.gr = ones(sol.cols, 1);
+            obtained = composeMaxProduct(a, sol.gr);
+            sol.exist = all(obtained >= b - tolerance);
+    end
+
+    if ~sol.exist
+        sol.contradict = find(obtained < b - tolerance).';
+        return;
+    end
+
+    % Diagnostic contribution table. A positive coefficient can attain
+    % B(i) exactly when its quotient lies in the fuzzy unit interval.
+    for i = 1:sol.rows
+        for j = 1:sol.cols
+            if a(i, j) <= 0
+                continue;
+            end
+            level = b(i) / a(i, j);
+            eligible = level <= 1 + tolerance;
+            if inequalities == 0
+                eligible = eligible && level <= upper(j) + tolerance;
+            end
+            if eligible
+                sol.help(i, j) = min(max(level, 0), 1);
+                sol.contribution(i, j) = true;
             end
         end
     end
-    
-    %Find greatest solution
-    for j = 1:sol.cols
-        %Takes the minimal element, bigger than 0, for the j-th column of A.
-        col_min = min(sol.help(sol.contribution(:,j), j));
+    sol.ind = sum(sol.contribution, 2);
 
-        if ~isempty(col_min)
-            %All elemnts bigger than x_gr(j) should be even to 0.
-            mask = sol.contribution(:,j) & (sol.help(:,j) > col_min);
-            sol.contribution(mask, j) = false;
-            sol.help(mask, j) = 0;
-
-            sol.help(sol.contribution(:,j) & (a(:,j)==0), j) = 0;
-
-            sol.gr(j) = col_min;
-        end
-        
-        indsolved = find(sol.contribution(:,j) == true);
-        sol.ind(indsolved) = sol.ind(indsolved) + 1;
-    end
-    
-    if inequalities == 0 || inequalities == 1
-        %Check if the system is consistent
-        if ~all(sol.ind)
-            sol.exist = false;
-            sol.contradict = find(sol.ind' == 0);
-            return;
-        end
-    end
-    
-    sol.exist = true;
-    
-    if inequalities == 1
-        sol.gr = ones(sol.cols, 1);
-    end
-    
-    if inequalities == -1
-        sol.low = zeros(sol.cols,1);
-        return;
-    end
-    
-    if full == false
+    if ~full
         sol = sol.gr;
         return;
     end
-    
-    %Domination
-    sol.dominated = [];
-    for i = 2:sol.rows
-        for ii = i-1:-1:1
-            if isempty(sol.dominated(sol.dominated == ii))
-                Pi  = find(sol.contribution(i,:)  == true);
-                Pii = find(sol.contribution(ii,:) == true);
-                if all(ismember(Pii, Pi)) && all(sol.help(ii, Pii) <= sol.help(i, Pii))
-                    sol.dominated = [i sol.dominated];
-                    break;
-                elseif all(ismember(Pi, Pii)) && all(sol.help(i, Pi) <= sol.help(ii, Pi))
-                    sol.dominated = [ii sol.dominated];
-                end
+
+    % Stage 3: <= systems are a down-set with zero as their unique minimal
+    % solution. Equations and >= systems need all minimal covers.
+    if inequalities == -1
+        sol.low = zeros(sol.cols, 1);
+        return;
+    end
+
+    sol.low = zeros(sol.cols, 0);
+    obtainMinimalCovers(zeros(sol.cols, 1));
+    if isempty(sol.low)
+        addMinimal(zeros(sol.cols, 1));
+    end
+
+    function obtainMinimalCovers(candidate)
+        composed = composeMaxProduct(a, candidate);
+        uncovered = find(composed < b - tolerance);
+        if isempty(uncovered)
+            addMinimal(candidate);
+            return;
+        end
+
+        [~, position] = max(b(uncovered));
+        row = uncovered(position);
+        for column = find(a(row, :) > 0)
+            level = b(row) / a(row, column);
+            if level > 1 + tolerance
+                continue;
             end
+            next = candidate;
+            next(column) = max(next(column), min(level, 1));
+            if inequalities == 0 && next(column) > upper(column) + tolerance
+                continue;
+            end
+            obtainMinimalCovers(next);
         end
     end
 
-    for i = sort(sol.dominated, 'descend')
-       sol.help(i,:) = [];
-       sol.contribution(i,:) = [];
-       b(i) = [];
-    end
-
-    
-    sol.help_rows = size(sol.help,1);
-    
-    %Find lower solution (depth-first-search)
-    sol.low = [];
-    marked = zeros(sol.help_rows,1);
-    obtain_low(1,zeros(sol.cols,1),marked);
-    
-    function obtain_low(i, low, marked)
-        for jj = find(sol.contribution(i,:))
-            nlow = low;
-            nlow(jj) = sol.help(i,jj);
-        
-            nmarked = marked;
-            nmarked(sol.contribution(:,jj)) = 1;
-        
-            nonmarked = find(nmarked==0);
-            if isempty(nonmarked)
-                add_low(nlow);
-            else
-                obtain_low(nonmarked(1),nlow,nmarked);
-            end
-        end
-    end
-
-    function add_low(low)
-        low = fuzzyMatrix(low);
+    % Stage 4: absorb duplicates and non-minimal covers as they are found.
+    function addMinimal(candidate)
         for k = size(sol.low, 2):-1:1
-            low_j = fuzzyMatrix(sol.low(:,k));
-            if all(low <= low_j)
-                sol.low(:,k) = [];
-            elseif all(low_j <= low)
+            existing = sol.low(:, k);
+            if all(candidate <= existing + tolerance)
+                sol.low(:, k) = [];
+            elseif all(existing <= candidate + tolerance)
                 return;
             end
         end
-        sol.low = [sol.low low];
+        sol.low(:, end + 1) = candidate;
     end
+end
+
+function result = composeMaxProduct(a, x)
+    result = max(a .* x.', [], 2);
 end
