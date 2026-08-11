@@ -23,6 +23,7 @@ function sol = smaxprod(a, b, inequalities, full)
     sol.rows = size(a, 1);
     sol.cols = size(a, 2);
     sol.help = zeros(sol.rows, sol.cols);
+    sol.help_inclusive = true(sol.rows, sol.cols);
     sol.contribution = false(sol.rows, sol.cols);
     sol.ind = zeros(sol.rows, 1);
     sol.dominated = [];
@@ -57,6 +58,7 @@ function sol = smaxprod(a, b, inequalities, full)
         sol.contradict = find(obtained < b - tolerance).';
         return;
     end
+    sol.gr_inclusive = true(size(sol.gr));
 
     % Diagnostic contribution table. A positive coefficient can attain
     % B(i) exactly when its quotient lies in the fuzzy unit interval.
@@ -87,6 +89,7 @@ function sol = smaxprod(a, b, inequalities, full)
     % solution. Equations and >= systems need all minimal covers.
     if inequalities == -1
         sol.low = zeros(sol.cols, 1);
+        sol.low_inclusive = true(size(sol.low));
         return;
     end
 
@@ -95,6 +98,7 @@ function sol = smaxprod(a, b, inequalities, full)
     if isempty(sol.low)
         addMinimal(zeros(sol.cols, 1));
     end
+    sol.low_inclusive = true(size(sol.low));
 
     function obtainMinimalCovers(candidate)
         composed = composeMaxProduct(a, candidate);

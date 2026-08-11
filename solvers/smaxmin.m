@@ -23,6 +23,7 @@ function sol = smaxmin(a, b, inequalities, full)
     sol.rows = size(a, 1);
     sol.cols = size(a, 2);
     sol.help = zeros(sol.rows, sol.cols);
+    sol.help_inclusive = true(sol.rows, sol.cols);
     sol.contribution = false(sol.rows, sol.cols);
     sol.ind = zeros(sol.rows, 1);
     sol.dominated = [];
@@ -58,6 +59,7 @@ function sol = smaxmin(a, b, inequalities, full)
         sol.contradict = find(obtained < b).';
         return;
     end
+    sol.gr_inclusive = true(size(sol.gr));
 
     % Preserve the diagnostic help/contribution representation used by the
     % public result structure. For equations, a contribution must also fit
@@ -86,6 +88,7 @@ function sol = smaxmin(a, b, inequalities, full)
     % solution. Equations and >= systems need all minimal covers.
     if inequalities == -1
         sol.low = zeros(sol.cols, 1);
+        sol.low_inclusive = true(size(sol.low));
         return;
     end
 
@@ -97,6 +100,7 @@ function sol = smaxmin(a, b, inequalities, full)
     if isempty(sol.low)
         addMinimal(zeros(sol.cols, 1));
     end
+    sol.low_inclusive = true(size(sol.low));
 
     function obtainMinimalCovers(candidate)
         composed = composeMaxMin(a, candidate);
