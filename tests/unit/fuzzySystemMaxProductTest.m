@@ -22,7 +22,7 @@ classdef fuzzySystemMaxProductTest < matlab.unittest.TestCase
                     expectedLow = ex.minimal;
                     expectedGr = ex.greatest;
                 else
-                    expectedLow = ex.minimal;
+                    expectedLow = ex.minimalGreaterOrEqual;
                     expectedGr = ones(6, 1);
                 end
                 testCase.verifyEqual(canonical(system.x.low), ...
