@@ -1,163 +1,142 @@
-% Solve fuzzy linear systems of equations/inequalities for systems with
-% Goguen composition.
-% This is the inverse problem for the min-diamond composition, aka
-% min - Goguen_implication, aka min - ->P, where x ->P y = (y/x if x > y; 1 otherwize)
-function sol = sgoguen(a,b,inequalities,full)
-    if ~(size(a,1) == length(b))
-        error('Inner matrix dimensions must agree.');
-    end
-    
+%SGOGUEN Solve min-Goguen fuzzy systems of equations or inequalities.
+%   The operation-specific boundary is a(i,j)*b(i); the surrounding four
+%   stages intentionally mirror the other inverse solvers.
+function sol = sgoguen(a, b, inequalities, full)
     if nargin < 3
         inequalities = 0;
     end
-
     if nargin < 4
         full = false;
     end
 
-    sol.rows = size(a,1);
-    sol.cols = size(a,2);
+    b = b(:);
+    tolerance = 1e-12;
+    if size(a, 1) ~= numel(b)
+        error('sgoguen:DimensionMismatch', ...
+            'The number of rows in A must equal the length of B.');
+    end
+    if ~ismember(inequalities, [-1 0 1])
+        error('sgoguen:InvalidInequality', ...
+            'Inequalities must be -1, 0, or 1.');
+    end
 
-    sol.help = ones(sol.rows,sol.cols);
-    sol.low = zeros(sol.cols, 1);
+    sol.rows = size(a, 1);
+    sol.cols = size(a, 2);
+    sol.help = ones(sol.rows, sol.cols);
+    sol.help_inclusive = true(sol.rows, sol.cols);
+    sol.contribution = false(sol.rows, sol.cols);
     sol.ind = zeros(sol.rows, 1);
-    
-    %Preprocessing
-    for j = 1:sol.cols
-        for i = 1:sol.rows
-            if true || a(i,j) ~= 0
-                sol.help(i,j) = a(i,j)*b(i);
+    sol.dominated = [];
+    sol.help_rows = sol.rows;
+
+    % Stage 1: I_P(a,x)>=b exactly when x>=a*b, also for a=0.
+    lower = max(a .* b, [], 1).';
+
+    % Stage 2: select the monotone boundary and verify it directly. A row
+    % containing only zero coefficients always composes to one.
+    switch inequalities
+        case -1
+            sol.low = zeros(sol.cols, 1);
+            obtained = composeGoguen(a, sol.low);
+            sol.exist = all(obtained <= b + tolerance);
+        case 0
+            sol.low = lower;
+            obtained = composeGoguen(a, sol.low);
+            sol.exist = all(abs(obtained - b) <= tolerance);
+        case 1
+            sol.low = lower;
+            sol.exist = true;
+    end
+
+    if ~sol.exist
+        sol.contradict = find(obtained > b + tolerance).';
+        return;
+    end
+    sol.low_inclusive = true(size(sol.low));
+
+    % A positive coefficient attains b<1 at the closed level a*b.
+    for i = 1:sol.rows
+        if b(i) >= 1 - tolerance
+            continue;
+        end
+        for j = 1:sol.cols
+            if a(i, j) <= 0
+                continue;
+            end
+            level = a(i, j) * b(i);
+            eligible = true;
+            if inequalities == 0
+                eligible = level >= lower(j) - tolerance;
+            end
+            if eligible
+                sol.help(i, j) = level;
+                sol.contribution(i, j) = true;
             end
         end
     end
-    
-    %Find the lower solution
-    for j = 1:sol.cols
-        %Takes the maximal element, for the j-th column of A.
-        % col_max = max(sol.help(sol.help(:,j) < 1, j));
-        col_max = max(sol.help(:, j));
+    sol.ind = sum(sol.contribution, 2);
 
-        if ~isempty(col_max)
-            sol.low(j) = col_max;
-            
-            %All elemnts lower than x_low(j) should be even to 1.
-            sol.help(sol.help(:,j) + eps < col_max, j) = 1;
-        end
-        
-        %Next row is because we cannot compare real numbers directly (a
-        %presition problem)
-        indsolved = find(abs(sol.help(:,j) - sol.low(j)) <= eps);
-        sol.ind(indsolved) = sol.ind(indsolved) + 1;
-        
-        % ToDo: Decide if we are going to rely on "contribution"!
-        %       In theory not needed but we still need to apply logic.
-        sol.ind(b == 1) = sol.ind(b == 1) + 1;
-    end
-    sol.help(b == 1, :) = 1; % Do we need this explicitly?
-    
-    if inequalities == -1 || inequalities == 0
-        %Check if the system is consistent
-        if ~all(sol.ind)
-            sol.exist = false;
-            sol.contradict = find(sol.ind' == 0);
-            return;
-        end
-    end
-    
-    sol.exist = true;
-    
-    if inequalities == 1
-        sol.gr = ones(sol.cols, 1);
-        return;
-    end
-    
-    if inequalities == -1
-        sol.low = zeros(sol.cols,1);
-    end
-
-    if full == false
+    if ~full
         sol = sol.low;
         return;
     end
-    
-    %Domination
-    % sol.dominated = find(b==1)';
-    sol.dominated = [];
-    for i = 2:sol.rows
-        if b(i) == 1, continue; end 
-        for ii = i-1:-1:1
-            if b(ii) == 1, continue; end 
-            if isempty(sol.dominated(sol.dominated == ii))
-                if b(i) == 0 || b(ii) == 0
-                    continue;
-                end
-                positivej = find(sol.help(i,:) < 1);
-                positivejj = find(sol.help(ii,:) < 1);
-                if (all(ismember(positivejj,positivej))) && (all(sol.help(ii,positivejj) <= sol.help(i,positivejj)))
-                    sol.dominated = [i sol.dominated];
-                    break;
-                elseif (all(ismember(positivej,positivejj))) && (all(sol.help(i,positivej) <= sol.help(ii,positivej)))
-                    sol.dominated = [ii sol.dominated];
-                end
-            end
-        end
+
+    % Stage 3: >= systems are an up-set. Equations and <= systems require
+    % all maximal covers formed from the a(i,j)*b(i) levels.
+    if inequalities == 1
+        sol.gr = ones(sol.cols, 1);
+        sol.gr_inclusive = true(size(sol.gr));
+        return;
     end
 
-    % unique is added here as sometimes some indexes may repeat. Probably
-    % need to add it everywhere or find other way to add the indexes
-    % Worth checking if unique actually sorts the array as if it does, we
-    % may remove the sort() after
-    sol.dominated = unique(sol.dominated);
-
-    for i = sort(sol.dominated, 'descend')
-        sol.help(i,:) = [];
-        b(i) = [];
+    sol.gr = zeros(sol.cols, 0);
+    obtainMaximalCovers(ones(sol.cols, 1));
+    if isempty(sol.gr)
+        addMaximal(ones(sol.cols, 1));
     end
-    
-    sol.help_rows = size(sol.help,1);
+    sol.gr_inclusive = true(size(sol.gr));
 
-    %Find greater solutions (depth-first-search)
-    if sol.help_rows == 0
-        sol.gr = ones(sol.cols,1);
-    else
-        sol.gr = [];
-        marked = zeros(sol.help_rows,1);
-        [sortedb,ii] = sort(b + (b==0)*42, 'ascend');
-        obtain_gr(ii(1),ones(sol.cols,1),marked);
-    end
-    
-    function obtain_gr(i, gr, marked)
-        % for jj = find(sol.help(i,:)<1 | (a(i,:) == 1 & b(i) == 1))
-        for jj = find(sol.help(i,:)<1 | (b(i) == 1))
-            ngr = gr;
-            if ngr(jj) == 1
-                ngr(jj) = sol.help(i,jj);
-            end
-            nmarked = marked;
-            nmarked(sol.help(ii,jj)<1 | b(i) == 1) = 1;
-            nonmarked = find(nmarked==0);
-            if isempty(nonmarked)
-                add_gr(ngr);
-            else
-                obtain_gr(ii(nonmarked(1)),ngr,nmarked);
-            end
-        end
-    end
-
-    function add_gr(gr)
-        gr = fuzzyMatrix(gr);
-        if ~all(goguen(fuzzyMatrix(a), gr) == goguen(fuzzyMatrix(a), sol.low))
+    function obtainMaximalCovers(candidate)
+        composed = composeGoguen(a, candidate);
+        uncovered = find(composed > b + tolerance);
+        if isempty(uncovered)
+            addMaximal(candidate);
             return;
         end
-        % ToDo: If I want to see all *possible* solutions I can just comment the following "for". Probably need to remove this comment later.
+
+        [~, position] = min(b(uncovered));
+        row = uncovered(position);
+        for column = find(a(row, :) > 0)
+            level = a(row, column) * b(row);
+            next = candidate;
+            next(column) = min(next(column), level);
+            if inequalities == 0 && ...
+                    next(column) < lower(column) - tolerance
+                continue;
+            end
+            obtainMaximalCovers(next);
+        end
+    end
+
+    % Stage 4: absorb duplicates and non-maximal covers as they are found.
+    function addMaximal(candidate)
         for k = size(sol.gr, 2):-1:1
-            gr_j = fuzzyMatrix(sol.gr(:,k));
-            if all(gr >= gr_j)
-                sol.gr(:,k) = [];
-            elseif all(gr_j >= gr)
+            existing = sol.gr(:, k);
+            if all(candidate >= existing - tolerance)
+                sol.gr(:, k) = [];
+            elseif all(existing >= candidate - tolerance)
                 return;
             end
         end
-        sol.gr = [sol.gr gr];
+        sol.gr(:, end + 1) = candidate;
     end
+end
+
+function result = composeGoguen(a, x)
+    xByRows = repmat(x.', size(a, 1), 1);
+    implications = ones(size(a));
+    belowAntecedent = a > xByRows;
+    implications(belowAntecedent) = ...
+        xByRows(belowAntecedent) ./ a(belowAntecedent);
+    result = min(implications, [], 2);
 end
