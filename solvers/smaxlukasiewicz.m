@@ -1,144 +1,142 @@
-% Solve fuzzy linear systems of equations/inequalities for systems with
-% max-ftnomrl composition aka max-Lukasiewicz t-norm
-function sol = smaxlukasiewicz(a,b,inequalities,full)
-    if ~(size(a,1) == length(b))
-        error('Inner matrix dimensions must agree.');
-    end;
-    
+%SMAXLUKASIEWICZ Solve max-Lukasiewicz systems or inequalities.
+%   The operation-specific upper/contribution level is the Lukasiewicz
+%   residual min(1,1-a+b); the four solver stages mirror the other max
+%   composition solvers.
+function sol = smaxlukasiewicz(a, b, inequalities, full)
     if nargin < 3
         inequalities = 0;
     end
-
     if nargin < 4
         full = false;
     end
-    
-    sol.rows = size(a,1);
-    sol.cols = size(a,2);
 
-    sol.help = zeros(sol.rows,sol.cols);
-    sol.gr = ones(sol.cols, 1);
+    b = b(:);
+    tolerance = 1e-12;
+    if size(a, 1) ~= numel(b)
+        error('smaxlukasiewicz:DimensionMismatch', ...
+            'The number of rows in A must equal the length of B.');
+    end
+    if ~ismember(inequalities, [-1 0 1])
+        error('smaxlukasiewicz:InvalidInequality', ...
+            'Inequalities must be -1, 0, or 1.');
+    end
+
+    sol.rows = size(a, 1);
+    sol.cols = size(a, 2);
+    sol.help = zeros(sol.rows, sol.cols);
+    sol.help_inclusive = true(sol.rows, sol.cols);
+    sol.contribution = false(sol.rows, sol.cols);
     sol.ind = zeros(sol.rows, 1);
-    
-    % ToDo: The below is actually producig wrong solutions! Just find out why. Just to know. Then remove it.
-    %Preprocessing
-    % for j = 1:sol.cols
-    %     for i = 1:sol.rows
-    %         if a(i,j) - 1 <= b(i) + eps                     % !!!!!!!!!! IMPORTANT: THIS IS PRACTICALLY - AWLAYS!
-    %             sol.help(i,j) = min(1, 1 - a(i,j) + b(i));  % !!!!!!!!!!            THIS is the exact formula. Probably we can actually do the exact formulas, after the bugfix in sgodel.m
-    %         end
-    %     end
-    % end
-    
-    %Preprocessing
-    for j = 1:sol.cols
-        for i = 1:sol.rows
-            if a(i,j) - 1 <= b(i) + eps
-                sol.help(i,j) = 1 - a(i,j) + b(i);
+    sol.dominated = [];
+    sol.help_rows = sol.rows;
+
+    % Stage 1: T_L(a,x)<=b exactly when x<=min(1,1-a+b). The equivalent
+    % 1-(a-b) form preserves exact zero-target boundaries 1-a.
+    residuals = min(1, 1 - (a - b));
+    upper = min(residuals, [], 1).';
+
+    % Stage 2: select the requested monotone boundary and verify it by
+    % direct composition.
+    switch inequalities
+        case -1
+            sol.gr = upper;
+            sol.exist = true;
+        case 0
+            sol.gr = upper;
+            obtained = composeMaxLukasiewicz(a, sol.gr);
+            sol.exist = all(abs(obtained - b) <= tolerance);
+        case 1
+            sol.gr = ones(sol.cols, 1);
+            obtained = composeMaxLukasiewicz(a, sol.gr);
+            sol.exist = all(obtained >= b - tolerance);
+    end
+
+    if ~sol.exist
+        sol.contradict = find(obtained < b - tolerance).';
+        return;
+    end
+    sol.gr_inclusive = true(size(sol.gr));
+
+    % A positive b is attained at x=1-a+b when a>=b.
+    for i = 1:sol.rows
+        if b(i) <= tolerance
+            continue;
+        end
+        for j = 1:sol.cols
+            if a(i, j) < b(i) - tolerance
+                continue;
+            end
+            level = min(1, 1 - (a(i, j) - b(i)));
+            eligible = true;
+            if inequalities == 0
+                eligible = level <= upper(j) + tolerance;
+            end
+            if eligible
+                sol.help(i, j) = level;
+                sol.contribution(i, j) = true;
             end
         end
     end
+    sol.ind = sum(sol.contribution, 2);
 
-    %Find greatest solution
-    for j = 1:sol.cols
-        %Takes the minimal element, bigger than 0, for the j-th column of A.
-        col_min = min(sol.help(sol.help(:,j) > 0, j));
-        
-        if ~isempty(col_min)
-            %All elemnts bigger than x_gr(j) should be even to 0.
-            sol.help(sol.help(:,j) - eps > col_min, j) = 0;
-            sol.gr(j) = col_min;
-        end
-        
-        %Next row is because we cannot compare real numbers directly (a
-        %presition problem)
-        indsolved = find(abs(sol.help(:,j) - sol.gr(j)) <= eps);
-
-        % indsolved = find(sol.help(:,j) == sol.gr(j));
-        sol.ind(indsolved) = sol.ind(indsolved) + 1;
-    end
-    
-    if inequalities == 0 || inequalities == 1
-        %Check if the system is consistent
-        if ~all(sol.ind)
-            sol.exist = false;
-            sol.contradict = find(sol.ind' == 0);
-            return;
-        end
-    end
-    
-    sol.exist = true;
-    
-    if inequalities == 1
-        sol.gr = ones(sol.cols, 1);
-    end
-    
-    if inequalities == -1
-        sol.low = zeros(sol.cols,1);
-        return;
-    end
-    
-    if full == false
+    if ~full
         sol = sol.gr;
         return;
     end
-    
-    %Domination
-    sol.dominated = [];
-    for i = 2:sol.rows
-        for ii = i-1:-1:1
-            if isempty(sol.dominated(sol.dominated == ii))
-                if all(sol.help(ii,:) <= sol.help(i,:))
-                    sol.dominated = [i sol.dominated];
-                    break;
-                elseif all(sol.help(i,:) <= sol.help(ii,:))
-                    sol.dominated = [ii sol.dominated];
-                end
+
+    % Stage 3: <= systems are a down-set. Equations and >= systems require
+    % all minimal covers of their positive target rows.
+    if inequalities == -1
+        sol.low = zeros(sol.cols, 1);
+        sol.low_inclusive = true(size(sol.low));
+        return;
+    end
+
+    sol.low = zeros(sol.cols, 0);
+    obtainMinimalCovers(zeros(sol.cols, 1));
+    if isempty(sol.low)
+        addMinimal(zeros(sol.cols, 1));
+    end
+    sol.low_inclusive = true(size(sol.low));
+
+    function obtainMinimalCovers(candidate)
+        composed = composeMaxLukasiewicz(a, candidate);
+        uncovered = find(composed < b - tolerance);
+        if isempty(uncovered)
+            addMinimal(candidate);
+            return;
+        end
+
+        [~, position] = max(b(uncovered));
+        row = uncovered(position);
+        for column = find(a(row, :) >= b(row) - tolerance)
+            level = min(1, 1 - (a(row, column) - b(row)));
+            next = candidate;
+            next(column) = max(next(column), level);
+            if inequalities == 0 && ...
+                    next(column) > upper(column) + tolerance
+                continue;
             end
+            obtainMinimalCovers(next);
         end
     end
 
-    % ToDo: The method below was wrong (and a codesmell even if it was right)... Because the matrix shorten
-    % iteratively, depending on the row numbers in the sol.dominated vector it was not removing dominated rows.
-    % This is probably a problem for all sovers. Investigate and fix.
-    sol.help(sol.dominated, :) = [];
-
-    % for i = sol.dominated
-    %     sol.help(i,:) = [];
-    % end
-    
-
-
-    sol.help_rows = size(sol.help,1);
-    
-    %Find lower solution (depth-first-search)
-    sol.low = [];
-    marked = zeros(sol.help_rows,1);
-    obtain_low(1,zeros(sol.cols,1),marked);
-    
-    function obtain_low(i, low, marked)
-        for jj = find(sol.help(i,:)>0)
-            nlow = low;
-            nlow(jj) = sol.help(i,jj);
-            nmarked = marked;
-            nmarked(sol.help(:,jj)>0) = 1;
-            nonmarked = find(nmarked==0);
-            if isempty(nonmarked)
-                add_low(nlow);
-            else
-                obtain_low(nonmarked(1),nlow,nmarked);
-            end
-        end
-    end
-
-    function add_low(low)
+    % Stage 4: absorb duplicates and non-minimal covers as they are found.
+    function addMinimal(candidate)
         for k = size(sol.low, 2):-1:1
-            if all(low <= sol.low(:,k))
-                sol.low(:,k) = [];
-            elseif all(sol.low(:,k) <= low)
+            existing = sol.low(:, k);
+            if all(candidate <= existing + tolerance)
+                sol.low(:, k) = [];
+            elseif all(existing <= candidate + tolerance)
                 return;
             end
         end
-        sol.low = [sol.low low];
+        sol.low(:, end + 1) = candidate;
     end
+end
+
+function result = composeMaxLukasiewicz(a, x)
+    xByRows = repmat(x.', size(a, 1), 1);
+    terms = max(0, xByRows - (1 - a));
+    result = max(terms, [], 2);
 end
