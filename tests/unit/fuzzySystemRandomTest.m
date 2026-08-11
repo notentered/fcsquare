@@ -25,9 +25,9 @@ classdef fuzzySystemRandomTest < matlab.unittest.TestCase
             'p4',  4 ...
         );
 
-        % Keep this at 10 while developing. The final stability run raises
-        % the repetition count to 50.
-        repetition = num2cell(1:10);
+        % Final stability contract: exercise every operation/size/precision
+        % combination with 50 deterministic, reproducible random examples.
+        repetition = num2cell(1:50);
     end
 
     methods (Test)
