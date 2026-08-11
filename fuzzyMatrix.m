@@ -274,31 +274,26 @@ classdef fuzzyMatrix < double
             %this method return only true or false. If true, the method
             %return a vector with the exact combination if there is aa
             %such.
-            if (nargin >=3) && (full == true)
-                depvectors = zeros(1,size(a,2));
-                ii = 1;
-            else
-                full = false;
-            end
+            full = (nargin >= 3) && (full == true);
+            dependent = zeros(1, 0);
             for i=1:size(a,2)
-                sol=is_lincomb(type,a,i);
-                
-                if sol == false
-                    result = false;
-                    return;
-                end
-                
-                if sol.exist
-                    if full == true
-                        depvectors(ii) = true;
-                        ii = ii + 1;
-                    else
+                solution = is_lincomb(type,a,i);
+                hasCombination = ~(islogical(solution) && ...
+                    isscalar(solution) && solution == false);
+
+                if hasCombination
+                    if ~full
                         result = false;
                         return;
                     end
+                    dependent(end + 1) = i; %#ok<AGROW>
                 end
             end
-            result = depvectors(1:ii);
+            if full
+                result = dependent;
+            else
+                result = true;
+            end
         end
 
     end

@@ -1,141 +1,139 @@
-%Solve fuzzy linear systems of equations/inequalities for systems with
-%max-min composition.
-% ToDo: on future refactoring, start with maxmin & sgodel in parallel 
-function sol = smaxmin(a,b,inequalities,full)
-    if ~(size(a,1) == length(b))
-        error('Inner matrix dimensions must agree.');
-    end
-    
+%SMAXMIN Solve max-min fuzzy systems of equations or inequalities.
+%   The implementation deliberately follows the same four stages that the
+%   other solvers can adopt later: build bounds, check consistency, extract
+%   opposite extremals, and remove dominated duplicates.
+function sol = smaxmin(a, b, inequalities, full)
     if nargin < 3
         inequalities = 0;
     end
-
     if nargin < 4
         full = false;
     end
-    
-    sol.rows = size(a,1);
-    sol.cols = size(a,2);
 
-    sol.help = zeros(sol.rows,sol.cols);
+    b = b(:);
+    if size(a, 1) ~= numel(b)
+        error('smaxmin:DimensionMismatch', ...
+            'The number of rows in A must equal the length of B.');
+    end
+    if ~ismember(inequalities, [-1 0 1])
+        error('smaxmin:InvalidInequality', ...
+            'Inequalities must be -1, 0, or 1.');
+    end
+
+    sol.rows = size(a, 1);
+    sol.cols = size(a, 2);
+    sol.help = zeros(sol.rows, sol.cols);
     sol.contribution = false(sol.rows, sol.cols);
-    sol.gr = ones(sol.cols, 1);
     sol.ind = zeros(sol.rows, 1);
-    
-    %Preprocessing
+    sol.dominated = [];
+    sol.help_rows = sol.rows;
+
+    % Stage 1: obtain the greatest vector that satisfies A o X <= B.
+    upper = ones(sol.cols, 1);
     for j = 1:sol.cols
-        for i = 1:sol.rows
-            if a(i,j) >= b(i)
-                sol.help(i,j) = b(i);
-                sol.contribution(i,j) = true;
-            end
+        restrictingRows = a(:, j) > b;
+        if any(restrictingRows)
+            upper(j) = min(b(restrictingRows));
         end
     end
 
-    %Find greatest solution
-    for j = 1:sol.cols
-        %Takes the minimal G type element, for the j-th column of A.
-        [sortedb,ii] = sort(b);
-        col_min = 1;
-        for i = ii'
-            if (sol.contribution(i,j) == true) && (a(i,j) ~= b(i))
-                col_min = sol.help(i,j);
-                break;
-            end
-        end
-        
-        %All elemnts bigger than x_gr(j) should be even to 0.
-        mask = sol.help(:,j) > col_min;
-        sol.help(mask, j) = 0;
-        sol.contribution(mask, j) = false;
-        
-        sol.gr(j) = col_min;
-        
-        indsolved = find(sol.contribution(:,j) == true);
-        sol.ind(indsolved) = sol.ind(indsolved) + 1;
+    % Stage 2: select the requested boundary and check consistency by
+    % direct composition. This also handles B(i)=0 without treating a zero
+    % help-matrix entry as "no contribution".
+    switch inequalities
+        case -1
+            sol.gr = upper;
+            sol.exist = true;
+        case 0
+            sol.gr = upper;
+            obtained = composeMaxMin(a, sol.gr);
+            sol.exist = all(obtained == b);
+        case 1
+            sol.gr = ones(sol.cols, 1);
+            obtained = composeMaxMin(a, sol.gr);
+            sol.exist = all(obtained >= b);
     end
-    
-    if inequalities == 0 || inequalities == 1
-        %Check if the system is consistent
-        if ~all(sol.ind)
-            sol.exist = false;
-            sol.contradict = find(sol.ind' == 0);
-            return;
-        end
-    end
-    
-    sol.exist = true;
-    
-    if inequalities == 1
-        sol.gr = ones(sol.cols, 1);
-    end
-    
-    if inequalities == -1
-        sol.low = zeros(sol.cols,1);
+
+    if ~sol.exist
+        sol.contradict = find(obtained < b).';
         return;
     end
-    
-    if full == false
+
+    % Preserve the diagnostic help/contribution representation used by the
+    % public result structure. For equations, a contribution must also fit
+    % below the greatest solution; for >= inequalities there is no upper
+    % restriction other than one.
+    for i = 1:sol.rows
+        for j = 1:sol.cols
+            eligible = a(i, j) >= b(i);
+            if inequalities == 0
+                eligible = eligible && b(i) <= upper(j);
+            end
+            if eligible
+                sol.help(i, j) = b(i);
+                sol.contribution(i, j) = true;
+            end
+        end
+    end
+    sol.ind = sum(sol.contribution, 2);
+
+    if ~full
         sol = sol.gr;
         return;
     end
-    
-    %Domination
-    sol.dominated = [];
-    for i = 2:sol.rows
-        for ii = i-1:-1:1
-            if isempty(sol.dominated(sol.dominated == ii))
-                positivej  = find(sol.contribution(i,:) == true);
-                positivejj = find(sol.contribution(ii,:) == true);
-                if (all(ismember(positivejj,positivej))) && (all(sol.help(ii,positivejj) >= sol.help(i,positivejj)))
-                    sol.dominated = [i sol.dominated];
-                    break;
-                elseif (all(ismember(positivej,positivejj))) && (all(sol.help(i,positivej) >= sol.help(ii,positivej)))
-                    sol.dominated = [ii sol.dominated];
-                end
+
+    % Stage 3: <= systems are a down-set with zero as their unique minimal
+    % solution. Equations and >= systems need all minimal covers.
+    if inequalities == -1
+        sol.low = zeros(sol.cols, 1);
+        return;
+    end
+
+    sol.low = zeros(sol.cols, 0);
+    obtainMinimalCovers(zeros(sol.cols, 1));
+
+    % A zero right-hand side has no positive row to cover; zero itself is
+    % the unique minimal solution.
+    if isempty(sol.low)
+        addMinimal(zeros(sol.cols, 1));
+    end
+
+    function obtainMinimalCovers(candidate)
+        composed = composeMaxMin(a, candidate);
+        uncovered = find(composed < b);
+        if isempty(uncovered)
+            addMinimal(candidate);
+            return;
+        end
+
+        % Processing the largest unmet level first lets one chosen
+        % coordinate cover every compatible lower-level equation.
+        [~, position] = max(b(uncovered));
+        row = uncovered(position);
+        for column = find(a(row, :) >= b(row))
+            next = candidate;
+            next(column) = max(next(column), b(row));
+            if inequalities == 0 && next(column) > upper(column)
+                continue;
             end
+            obtainMinimalCovers(next);
         end
     end
 
-    for i = sort(sol.dominated, 'descend')
-       sol.help(i,:) = [];
-       sol.contribution(i,:) = [];
-       b(i) = [];
-    end
-
-    sol.help_rows = size(sol.help,1);
-    
-    %Find lower solution (depth-first-search)
-    sol.low = [];
-    marked = zeros(sol.help_rows,1);
-    [sortedb,ii] = sort(b, 'descend');
-    obtain_low(ii(1),zeros(sol.cols,1),marked);
-    
-    function obtain_low(i, low, marked)
-        for jj = find(sol.contribution(i,:) == true)
-            nlow = low;
-            nlow(jj) = sol.help(i,jj);
-            nmarked = marked;
-            nmarked(sol.contribution(ii,jj) == true) = 1;
-            nonmarked = find(nmarked==0);
-            if isempty(nonmarked)
-                add_low(nlow);
-            else
-                obtain_low(ii(nonmarked(1)),nlow,nmarked);
-            end
-        end
-    end
-
-    function add_low(low)
-        low = fuzzyMatrix(low);
+    % Stage 4: absorb duplicates and non-minimal covers as they are found.
+    function addMinimal(candidate)
         for k = size(sol.low, 2):-1:1
-            low_j = fuzzyMatrix(sol.low(:,k));
-            if all(low <= low_j)
-                sol.low(:,k) = [];
-            elseif all(low_j <= low)
+            existing = sol.low(:, k);
+            if all(candidate <= existing)
+                sol.low(:, k) = [];
+            elseif all(existing <= candidate)
                 return;
             end
         end
-        sol.low = [sol.low low];
+        sol.low(:, end + 1) = candidate;
     end
+end
+
+function result = composeMaxMin(a, x)
+    result = max(min(a, x.'), [], 2);
 end

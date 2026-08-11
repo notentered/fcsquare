@@ -46,12 +46,12 @@
 %   References
 %   ----------
 %   1. K. Peeva, Zl. Zahariev, Computing behavior of finite fuzzy machines
-%   ñ Algorithm and its application to reduction and minimization,
+%   ‚Äì Algorithm and its application to reduction and minimization,
 %   Information Sciences, Vol. 178 (2008) issue 21, 4152-4165.
 %   
 %   2. Z. Zahariev, Software package and API in MATLAB for working with
-%   fuzzy algebras, In International Conference ÑApplications of Mathematics
-%   in Engineering and Economics (AMEE'09)î, AIP Conference Proceedings,
+%   fuzzy algebras, In International Conference ‚ÄûApplications of Mathematics
+%   in Engineering and Economics (AMEE'09)‚Äù, AIP Conference Proceedings,
 %   vol. 1184, G. Venkov, R. Kovatcheva, V. Pasheva (eds.) American
 %   Institute of Physics, ISBN 978-0-7354-0750-9, 2009, 434-350.
 classdef fuzzyMachine < handle
@@ -71,9 +71,14 @@ classdef fuzzyMachine < handle
         function obj = fuzzyMachine(initial_set,composition,postprocess,word_length,full)
             %Constructor for fuzzyMachine
             if nargin == 0
-                error('Initial set of matrices for word length = 1 should be provided');
+                error('fuzzyMachine:MissingInitialSet', ...
+                    'Initial set of matrices for word length 1 must be provided.');
             end
             if nargin >= 1
+                if ~iscell(initial_set) || isempty(initial_set)
+                    error('fuzzyMachine:InvalidInitialSet', ...
+                        'Initial set must be a nonempty cell array of matrices.');
+                end
                 obj.initial_set = initial_set;
             end
             if nargin >= 2
@@ -82,27 +87,36 @@ classdef fuzzyMachine < handle
                 obj.conorm = obj.composition(4:end);
             end
             if nargin >= 3
-                if strcmp(postprocess,'reduce') || strcmp(postprocess, 'minimize')
+                if any(strcmp(postprocess, {'reduce', 'minimize', 'none'}))
                     obj.postprocess = postprocess;
                 else
-                    error('Postprocess can be either "reduce" or "minimize"');
+                    error('fuzzyMachine:InvalidPostprocess', ...
+                        'Postprocess must be "reduce", "minimize", or "none".');
                 end
             end
-            if (nargin >= 4) && isinteger(word_length) && (word_length >= 0)
-                obj.word_length = word_length;
+            if nargin >= 4
+                if ~(isnumeric(word_length) && isscalar(word_length) && ...
+                        isreal(word_length) && isfinite(word_length) && ...
+                        word_length == fix(word_length) && word_length >= -1)
+                    error('fuzzyMachine:InvalidWordLength', ...
+                        'Word length must be an integer greater than or equal to -1.');
+                end
+                obj.word_length = double(word_length);
             end
             if (nargin >= 5) && (full == true)
                 obj.full = true;
             end
             
-            if (obj.full == true) && (word_length == -1)
-                error ('For full bihevior matrix word length should be specified!');
+            if obj.full && obj.word_length < 0
+                error('fuzzyMachine:FullBehaviorNeedsWordLength', ...
+                    'A nonnegative word length is required for full behavior.');
             end
             
-            obj.letters = length(initial_set{1});
+            obj.letters = size(initial_set{1}, 1);
             for i = 1:numel(initial_set)
                 if (any(size(initial_set{i})~=[obj.letters obj.letters]))
-                    error('All state matrices must be square matrices with the same size!');
+                    error('fuzzyMachine:NonSquareTransitionMatrix', ...
+                        'All transition matrices must be square and have the same size.');
                 end
             end
         end
@@ -182,4 +196,3 @@ classdef fuzzyMachine < handle
         end
     end
 end
-

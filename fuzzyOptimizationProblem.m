@@ -36,25 +36,25 @@
 %   ----------
 %   1. K. Peeva, Zl. Zahariev, Optimization of linear cost function with
 %   fuzzy max-product relational equation constraints, Proceedings of 32th
-%   International Conference AM≈E, Sozopol June 2006, M. Marinov,
+%   International Conference AMEE, Sozopol June 2006, M. Marinov,
 %   M. Todorov (eds), Softtrade, Sofia, 2007, ISBN 978-954-334-050-7,
 %   pp 261-272.
 %
 %   2. K. Peeva, Zl, Zahariev, Iv. Atanasov, Optimization of Linear
 %   Objective Function Under Max-product Fuzzy Relational Constraint,
 %   Proceedings of the 9th WSEAS International Conference on FUZZY SYSTEMS
-%   (FSí08) ñ Advanced Topics on Fuzzy Systems, Book Series: Artificial
+%   (FS‚Äô08) ‚Äì Advanced Topics on Fuzzy Systems, Book Series: Artificial
 %   Intelligence Series- WSEAS, Sofia, Bulgaria, May 2-4, 2008, ISBN:
 %   978-960-6766-56-5, ISSN: 1790-5109, 132-137.
 %   
 %   3. K. Peeva, Zl. Zahariev, I. Atanasov, Software for optimization of
 %   linear objective function with fuzzy relational constraint, Fourth
 %   International IEEE Conference on Intelligent Systems, Sept. 2008,
-%   Varna, Vol. 3 (2008), pp. 18-14ñ18-19, ISBN 978-I-4244-1739.
+%   Varna, Vol. 3 (2008), pp. 18-14‚Äì18-19, ISBN 978-I-4244-1739.
 %   
 %   4. Z. Zahariev, Software package and API in MATLAB for working with
-%   fuzzy algebras, In International Conference ÑApplications of Mathematics
-%   in Engineering and Economics (AMEE'09)î, AIP Conference Proceedings,
+%   fuzzy algebras, In International Conference ‚ÄûApplications of Mathematics
+%   in Engineering and Economics (AMEE'09)‚Äù, AIP Conference Proceedings,
 %   vol. 1184, G. Venkov, R. Kovatcheva, V. Pasheva (eds.) American
 %   Institute of Physics, ISBN 978-0-7354-0750-9, 2009, 434-350.
 classdef fuzzyOptimizationProblem < handle
@@ -121,7 +121,7 @@ classdef fuzzyOptimizationProblem < handle
             
             for i = 1:size(obj.constraints.x.gr,2)
                 current_solution(obj.object > 0) = obj.constraints.x.gr(obj.object > 0, i);
-                for j = 1:size(obj.constraints.low,2)
+                for j = 1:size(obj.constraints.x.low,2)
                     current_solution(obj.object < 0) = obj.constraints.x.low(obj.object < 0, j);
                     
                     current_value=obj.object*current_solution';
@@ -138,4 +138,3 @@ classdef fuzzyOptimizationProblem < handle
     end
     
 end
-
