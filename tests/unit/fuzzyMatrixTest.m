@@ -44,6 +44,7 @@ classdef fuzzyMatrixTest < matlab.mock.TestCase
 
         function testEqMethod(testCase)
             a = fuzzyMatrix([0.5, 0.7; 0.3, 0.9]);
+            tol = fuzzyMatrix.localTol(double(a), double(a));
 
             % Test equality with no tolerance
             b = fuzzyMatrix([0.5, 0.7; 0.3, 0.9]);
@@ -52,13 +53,13 @@ classdef fuzzyMatrixTest < matlab.mock.TestCase
             testCase.verifyTrue(all(all(actual == expected)));
 
             % Test equality with small tolerance difference
-            b = fuzzyMatrix([0.5 + eps, 0.7; 0.3, 0.9]);
+            b = fuzzyMatrix([0.5 + tol/2, 0.7; 0.3, 0.9]);
             actual = (a == b);
             expected = logical([1, 1; 1, 1]);
             testCase.verifyTrue(all(all(actual == expected)));
         
             % Test equality where one element is outside the tolerance
-            b = fuzzyMatrix([0.5 + 2*eps, 0.7; 0.3, 0.9]);
+            b = fuzzyMatrix([0.5 + 2*tol, 0.7; 0.3, 0.9]);
             actual = (a == b);
             expected = logical([0, 1; 1, 1]);
             testCase.verifyTrue(all(all(actual == expected)));
@@ -66,6 +67,7 @@ classdef fuzzyMatrixTest < matlab.mock.TestCase
 
         function testIsequalMethod(testCase)
             a = fuzzyMatrix([0.5, 0.7; 0.3, 0.9]);
+            tol = fuzzyMatrix.localTol(double(a), double(a));
 
             % Test equal matrices with no tolerance
             b = fuzzyMatrix([0.5, 0.7; 0.3, 0.9]);
@@ -73,12 +75,12 @@ classdef fuzzyMatrixTest < matlab.mock.TestCase
             testCase.verifyTrue(actual);
 
             % Test equal matrices with small tolerance difference
-            b = fuzzyMatrix([0.5 + eps, 0.7; 0.3, 0.9]);
+            b = fuzzyMatrix([0.5 + tol/2, 0.7; 0.3, 0.9]);
             actual = isequal(a, b);
             testCase.verifyTrue(actual);
         
             % Test matrices where one element is outside the tolerance
-            b = fuzzyMatrix([0.5 + 2*eps, 0.7; 0.3, 0.9]);
+            b = fuzzyMatrix([0.5 + 2*tol, 0.7; 0.3, 0.9]);
             actual = isequal(a, b);
             testCase.verifyFalse(actual);
         end
