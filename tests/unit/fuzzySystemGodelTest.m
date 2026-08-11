@@ -55,8 +55,18 @@ classdef fuzzySystemGodelTest < matlab.unittest.TestCase
                     if expected.exist
                         testCase.verifyEqual(canonical(actual.x.low), ...
                             canonical(expected.low), 'AbsTol', 1e-12, context);
-                        testCase.verifyEqual(canonical(actual.x.gr), ...
-                            canonical(expected.gr), 'AbsTol', 1e-12, context);
+                        if inequalities == -1
+                            testCase.verifyTrue(isfield(actual.x, 'gr_inclusive'), ...
+                                ['Open Gödel bounds require gr_inclusive.' newline context]);
+                            testCase.verifyEqual( ...
+                                canonicalBoxes(actual.x.gr, actual.x.gr_inclusive), ...
+                                canonicalBoxes(expected.gr, expected.gr_inclusive), ...
+                                'AbsTol', 1e-12, context);
+                            verifyInteriorPoints(testCase, a, b, actual.x, context);
+                        else
+                            testCase.verifyEqual(canonical(actual.x.gr), ...
+                                canonical(expected.gr), 'AbsTol', 1e-12, context);
+                        end
                     end
                 end
             end
@@ -66,4 +76,21 @@ end
 
 function result = canonical(solutions)
     result = sortrows(double(solutions).').';
+end
+
+function result = canonicalBoxes(upper, inclusive)
+    combined = [double(upper); double(inclusive)];
+    result = sortrows(combined.').';
+end
+
+function verifyInteriorPoints(testCase, a, b, solution, context)
+    tolerance = 1e-9;
+    for k = 1:size(solution.gr, 2)
+        interior = double(solution.gr(:, k));
+        openCoordinates = ~solution.gr_inclusive(:, k);
+        interior(openCoordinates) = max(0, ...
+            interior(openCoordinates) - tolerance);
+        obtained = double(godel(a, fuzzyMatrix(interior)));
+        testCase.verifyLessThanOrEqual(obtained, double(b) + 1e-12, context);
+    end
 end
