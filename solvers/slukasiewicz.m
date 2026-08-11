@@ -1,133 +1,144 @@
-% Solve fuzzy linear systems of equations/inequalities for systems with
-% Lukasiewicz composition.
-% This is the inverse problem for the min-fimpl composition, aka
-% min - Lucasiewicz_implication, aka min - ->L, where x ->L y = min(1, 1-x+y)
-function sol = slukasiewicz(a,b,inequalities,full)
-    if ~(size(a,1) == length(b))
-        error('Inner matrix dimensions must agree.');
-    end;
-    
+%SLUKASIEWICZ Solve min-Lukasiewicz systems or inequalities.
+%   The operation-specific boundary is max(0,a(i,j)+b(i)-1); the four
+%   solver stages otherwise mirror the other monotone inverse solvers.
+function sol = slukasiewicz(a, b, inequalities, full)
     if nargin < 3
         inequalities = 0;
     end
-
     if nargin < 4
         full = false;
     end
 
-    sol.rows = size(a,1);
-    sol.cols = size(a,2);
+    b = b(:);
+    tolerance = 1e-12;
+    if size(a, 1) ~= numel(b)
+        error('slukasiewicz:DimensionMismatch', ...
+            'The number of rows in A must equal the length of B.');
+    end
+    if ~ismember(inequalities, [-1 0 1])
+        error('slukasiewicz:InvalidInequality', ...
+            'Inequalities must be -1, 0, or 1.');
+    end
 
-    sol.help = ones(sol.rows,sol.cols);
-    sol.low = zeros(sol.cols, 1);
+    sol.rows = size(a, 1);
+    sol.cols = size(a, 2);
+    sol.help = ones(sol.rows, sol.cols);
+    sol.help_inclusive = true(sol.rows, sol.cols);
+    sol.contribution = false(sol.rows, sol.cols);
     sol.ind = zeros(sol.rows, 1);
-    
-    %Preprocessing
-    for j = 1:sol.cols
-        for i = 1:sol.rows
-            if 1 - a(i,j) <= b(i) + eps
-                sol.help(i,j) = a(i,j) + b(i) - 1;
+    sol.dominated = [];
+    sol.help_rows = sol.rows;
+
+    % Stage 1: I_L(a,x)>=b exactly when x>=max(0,a+b-1).
+    levels = max(0, a + b - 1);
+    lower = max(levels, [], 1).';
+
+    % Stage 2: select the requested monotone boundary and verify it by
+    % direct composition. This also handles zero coefficients and b=1.
+    switch inequalities
+        case -1
+            sol.low = zeros(sol.cols, 1);
+            obtained = composeLukasiewicz(a, sol.low);
+            sol.exist = all(obtained <= b + tolerance);
+        case 0
+            sol.low = lower;
+            obtained = composeLukasiewicz(a, sol.low);
+            sol.exist = all(abs(obtained - b) <= tolerance);
+        case 1
+            sol.low = lower;
+            sol.exist = true;
+    end
+
+    if ~sol.exist
+        sol.contradict = find(obtained > b + tolerance).';
+        return;
+    end
+    sol.low_inclusive = true(size(sol.low));
+
+    % A b<1 level is attainable only when a+b-1 lies in [0,1].
+    for i = 1:sol.rows
+        if b(i) >= 1 - tolerance
+            continue;
+        end
+        for j = 1:sol.cols
+            rawLevel = a(i, j) + b(i) - 1;
+            if rawLevel < -tolerance
+                continue;
+            end
+            level = max(0, rawLevel);
+            eligible = true;
+            if inequalities == 0
+                eligible = level >= lower(j) - tolerance;
+            end
+            if eligible
+                sol.help(i, j) = level;
+                sol.contribution(i, j) = true;
             end
         end
     end
-    
-    %Find the lower solution
-    for j = 1:sol.cols
-        %Takes the maximal element, for the j-th column of A.
-        col_max = max(sol.help(sol.help(:,j) < 1, j));
-        
-        if ~isempty(col_max)
-            sol.low(j) = col_max;
-            
-            %All elemnts lower than x_low(j) should be even to 1.
-            sol.help(sol.help(:,j) + eps < col_max, j) = 1;
-        end
-        
-        %Next row is because we cannot compare real numbers directly (a
-        %presition problem)
-        indsolved = find(abs(sol.help(:,j) - sol.low(j)) <= eps);
-        sol.ind(indsolved) = sol.ind(indsolved) + 1;
-    end
-    
-    if inequalities == -1 || inequalities == 0
-        %Check if the system is consistent
-        if ~all(sol.ind)
-            sol.exist = false;
-            sol.contradict = find(sol.ind' == 0);
-            return;
-        end;
-    end
-    
-    sol.exist = true;
-    
-    if inequalities == 1
-        sol.gr = ones(sol.cols, 1);
-        return;
-    end
-    
-    if inequalities == -1
-        sol.low = zeros(sol.cols,1);
-    end
-    
-    if full == false
+    sol.ind = sum(sol.contribution, 2);
+
+    if ~full
         sol = sol.low;
         return;
     end
-    
-    %Domination
-    sol.dominated = find(b==1);
-    for i = 2:sol.rows
-        for ii = i-1:-1:1
-            if isempty(sol.dominated(sol.dominated == ii))
-                positivej = find(sol.help(i,:) < 1);
-                positivejj = find(sol.help(ii,:) < 1);
-                if (all(ismember(positivejj,positivej))) && (all(sol.help(ii,positivejj) <= sol.help(i,positivejj)))
-                    sol.dominated = [i sol.dominated];
-                    break;
-                elseif (all(ismember(positivej,positivejj))) && (all(sol.help(i,positivej) <= sol.help(ii,positivej)))
-                    sol.dominated = [ii sol.dominated];
-                end
-            end
-        end
-    end
-    for i = sort(sol.dominated, 'descend')
-       sol.help(i,:) = [];
+
+    % Stage 3: >= systems are an up-set. Equations and <= systems require
+    % all maximal covers formed from their attainable levels.
+    if inequalities == 1
+        sol.gr = ones(sol.cols, 1);
+        sol.gr_inclusive = true(size(sol.gr));
+        return;
     end
 
-    sol.help_rows = size(sol.help,1);
-    
-    %Find greater solutions (depth-first-search)
-    if sol.help_rows == 0
-        sol.gr = ones(sol.cols,1);
-    else
-        sol.gr = [];
-        marked = zeros(sol.help_rows,1);
-        obtain_gr(1,ones(sol.cols,1),marked);
+    sol.gr = zeros(sol.cols, 0);
+    obtainMaximalCovers(ones(sol.cols, 1));
+    if isempty(sol.gr)
+        addMaximal(ones(sol.cols, 1));
     end
-    
-    function obtain_gr(i, gr, marked)
-        for jj = find(sol.help(i,:)<1)
-            ngr = gr;
-            ngr(jj) = sol.help(i,jj);
-            nmarked = marked;
-            nmarked(sol.help(:,jj)<1) = 1;
-            nonmarked = find(nmarked==0);
-            if isempty(nonmarked)
-                add_gr(ngr);
-            else
-                obtain_gr(nonmarked(1),ngr,nmarked);
+    sol.gr_inclusive = true(size(sol.gr));
+
+    function obtainMaximalCovers(candidate)
+        composed = composeLukasiewicz(a, candidate);
+        uncovered = find(composed > b + tolerance);
+        if isempty(uncovered)
+            addMaximal(candidate);
+            return;
+        end
+
+        [~, position] = min(b(uncovered));
+        row = uncovered(position);
+        for column = 1:sol.cols
+            rawLevel = a(row, column) + b(row) - 1;
+            if rawLevel < -tolerance
+                continue;
             end
+            next = candidate;
+            next(column) = min(next(column), max(0, rawLevel));
+            if inequalities == 0 && ...
+                    next(column) < lower(column) - tolerance
+                continue;
+            end
+            obtainMaximalCovers(next);
         end
     end
 
-    function add_gr(gr)
-        for k = 1:size(sol.gr, 2)
-            if all(gr <= sol.gr(:,k))
-                sol.gr(:,k) = [];
-            elseif all(sol.gr(:,k) <= gr)
+    % Stage 4: absorb duplicates and non-maximal covers as they are found.
+    function addMaximal(candidate)
+        for k = size(sol.gr, 2):-1:1
+            existing = sol.gr(:, k);
+            if all(candidate >= existing - tolerance)
+                sol.gr(:, k) = [];
+            elseif all(existing >= candidate - tolerance)
                 return;
             end
         end
-        sol.gr = [sol.gr gr];
+        sol.gr(:, end + 1) = candidate;
     end
+end
+
+function result = composeLukasiewicz(a, x)
+    xByRows = repmat(x.', size(a, 1), 1);
+    implications = min(1, 1 - a + xByRows);
+    result = min(implications, [], 2);
 end
