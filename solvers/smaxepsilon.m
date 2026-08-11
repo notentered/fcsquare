@@ -1,126 +1,200 @@
-% ToDo CHECK THIS. By logic it has to be as "sgodel"... so it should be "max"; A duplicate maybe?
-
-
-% Solve fuzzy linear systems of equations/inequalities for systems with
-% max-epsilon composition.
-% x Eps y = (y if y > x; 0 otherwize)
-function sol = smaxepsilon(a,b,inequalities,full)
-    if ~(size(a,1) == length(b))
-        error('Inner matrix dimensions must agree.');
-    end;
-    
+%SMAXEPSILON Solve max-epsilon fuzzy systems or inequalities.
+%   Epsilon is E(a,x)=x for x>a and zero otherwise. Its strict jump makes
+%   some >= lower endpoints open; low_inclusive records those endpoints.
+function sol = smaxepsilon(a, b, inequalities, full)
     if nargin < 3
         inequalities = 0;
     end
-
     if nargin < 4
         full = false;
     end
-    
-    sol.rows = size(a,1);
-    sol.cols = size(a,2);
 
-    sol.help = zeros(sol.rows,sol.cols);
-    sol.gr = ones(sol.cols, 1);
+    b = b(:);
+    tolerance = 1e-12;
+    if size(a, 1) ~= numel(b)
+        error('smaxepsilon:DimensionMismatch', ...
+            'The number of rows in A must equal the length of B.');
+    end
+    if ~ismember(inequalities, [-1 0 1])
+        error('smaxepsilon:InvalidInequality', ...
+            'Inequalities must be -1, 0, or 1.');
+    end
+
+    sol.rows = size(a, 1);
+    sol.cols = size(a, 2);
+    sol.help = zeros(sol.rows, sol.cols);
+    sol.help_inclusive = true(sol.rows, sol.cols);
+    sol.contribution = false(sol.rows, sol.cols);
     sol.ind = zeros(sol.rows, 1);
-    
-    %Preprocessing
-    for j = 1:sol.cols
-        for i = 1:sol.rows
-            if a(i,j) < b(i) && b(i) > 0
-                sol.help(i,j) = b(i);
+    sol.dominated = [];
+    sol.help_rows = sol.rows;
+
+    % Stage 1: E(a,x)<=b exactly when x<=max(a,b). Intersecting all rows
+    % gives the greatest <= boundary, including b=0 and x=a.
+    upper = min(max(a, b), [], 1).';
+
+    % Stage 2: select the requested monotone boundary and verify it by
+    % direct composition.
+    switch inequalities
+        case -1
+            sol.gr = upper;
+            sol.exist = true;
+        case 0
+            sol.gr = upper;
+            obtained = composeMaxEpsilon(a, sol.gr);
+            sol.exist = all(abs(obtained - b) <= tolerance);
+        case 1
+            sol.gr = ones(sol.cols, 1);
+            obtained = composeMaxEpsilon(a, sol.gr);
+            sol.exist = all(obtained >= b - tolerance);
+    end
+
+    if ~sol.exist
+        sol.contradict = find(obtained < b - tolerance).';
+        return;
+    end
+    sol.gr_inclusive = true(size(sol.gr));
+
+    % For equations, b>0 is attained at the closed level x=b only when
+    % a<b. For >=, b<=a<1 instead produces the open level x>a.
+    for i = 1:sol.rows
+        if b(i) <= tolerance
+            continue;
+        end
+        for j = 1:sol.cols
+            if inequalities == 1
+                if a(i, j) >= 1
+                    continue;
+                elseif b(i) > a(i, j)
+                    level = b(i);
+                    levelInclusive = true;
+                else
+                    level = a(i, j);
+                    levelInclusive = false;
+                end
+                eligible = true;
+            else
+                level = b(i);
+                levelInclusive = true;
+                eligible = a(i, j) < b(i);
+                if inequalities == 0
+                    eligible = eligible && level <= upper(j) + tolerance;
+                end
+            end
+            if eligible
+                sol.help(i, j) = level;
+                sol.help_inclusive(i, j) = levelInclusive;
+                sol.contribution(i, j) = true;
             end
         end
     end
-    
-    %Find greatest solution
-    for j = 1:sol.cols
-        %Takes the minimal element, bigger than 0, for the j-th column of A.
-        col_min = min(sol.help(sol.help(:,j) > 0, j));
-        
-        if ~isempty(col_min)
-            %All elemnts bigger than x_gr(j) should be even to 0.
-            sol.help(sol.help(:,j) > col_min, j) = 0;
-            sol.gr(j) = col_min;
-        end
-        
-        indsolved = find(sol.help(:,j) == sol.gr(j));
-        sol.ind(indsolved) = sol.ind(indsolved) + 1;
-    end
-    
-    if inequalities == 0 || inequalities == 1
-        %Check if the system is consistent
-        if ~all(sol.ind)
-            sol.exist = false;
-            sol.contradict = find(sol.ind' == 0);
-            return;
-        end;
-    end
-    
-    sol.exist = true;
-    
-    if inequalities == 1
-        sol.gr = ones(sol.cols, 1);
-    end
-    
-    if inequalities == -1
-        sol.low = zeros(sol.cols,1);
-        return;
-    end
-    
-    if full == false
+    sol.ind = sum(sol.contribution, 2);
+
+    if ~full
         sol = sol.gr;
         return;
     end
-    
-    %Domination
-    sol.dominated = [];
-    for i = 2:sol.rows
-        for ii = i-1:-1:1
-            if isempty(sol.dominated(sol.dominated == ii))
-                if all(sol.help(ii,:) <= sol.help(i,:))
-                    sol.dominated = [i sol.dominated];
-                    break;
-                elseif all(sol.help(i,:) <= sol.help(ii,:))
-                    sol.dominated = [ii sol.dominated];
-                end
-            end
+
+    % Stage 3: <= systems are a down-set. Equations need closed minimal
+    % covers; >= systems need a union of possibly open lower boxes.
+    if inequalities == -1
+        sol.low = zeros(sol.cols, 1);
+        sol.low_inclusive = true(size(sol.low));
+        return;
+    end
+
+    sol.low = zeros(sol.cols, 0);
+    sol.low_inclusive = false(sol.cols, 0);
+    if inequalities == 1
+        restrictingRowIndexes = find(b > tolerance);
+        enumerateLowerBoxes(1, zeros(sol.cols, 1), true(sol.cols, 1));
+    else
+        obtainMinimalCovers(zeros(sol.cols, 1));
+    end
+    if isempty(sol.low)
+        addMinimal(zeros(sol.cols, 1), true(sol.cols, 1));
+    end
+
+    function enumerateLowerBoxes(position, lower, inclusive)
+        if position > numel(restrictingRowIndexes)
+            addMinimal(lower, inclusive);
+            return;
         end
-    end
-    for i = sol.dominated
-        sol.help(i,:) = [];
-    end
-    
-    sol.help_rows = size(sol.help,1);
-    
-    %Find lower solution (depth-first-search)
-    sol.low = [];
-    marked = zeros(sol.help_rows,1);
-    obtain_low(1,zeros(sol.cols,1),marked);
-    
-    function obtain_low(i, low, marked)
-        for jj = find(sol.help(i,:)>0)
-            nlow = low;
-            nlow(jj) = sol.help(i,jj);
-            nmarked = marked;
-            nmarked(sol.help(:,jj)>0) = 1;
-            nonmarked = find(nmarked==0);
-            if isempty(nonmarked)
-                add_low(nlow);
+
+        row = restrictingRowIndexes(position);
+        for column = find(a(row, :) < 1)
+            if b(row) > a(row, column)
+                limit = b(row);
+                limitInclusive = true;
             else
-                obtain_low(nonmarked(1),nlow,nmarked);
+                limit = a(row, column);
+                limitInclusive = false;
             end
+
+            nextLower = lower;
+            nextInclusive = inclusive;
+            if limit > nextLower(column) + tolerance
+                nextLower(column) = limit;
+                nextInclusive(column) = limitInclusive;
+            elseif abs(limit - nextLower(column)) <= tolerance
+                nextInclusive(column) = ...
+                    nextInclusive(column) && limitInclusive;
+            end
+            enumerateLowerBoxes(position + 1, nextLower, nextInclusive);
         end
     end
 
-    function add_low(low)
+    function obtainMinimalCovers(candidate)
+        composed = composeMaxEpsilon(a, candidate);
+        uncovered = find(composed < b - tolerance);
+        if isempty(uncovered)
+            addMinimal(candidate, true(sol.cols, 1));
+            return;
+        end
+
+        [~, position] = max(b(uncovered));
+        row = uncovered(position);
+        for column = find(a(row, :) < b(row))
+            next = candidate;
+            next(column) = max(next(column), b(row));
+            if next(column) > upper(column) + tolerance
+                continue;
+            end
+            obtainMinimalCovers(next);
+        end
+    end
+
+    % Stage 4: absorb contained boxes or dominated closed covers.
+    function addMinimal(candidate, inclusive)
         for k = size(sol.low, 2):-1:1
-            if all(low <= sol.low(:,k))
-                sol.low(:,k) = [];
-            elseif all(sol.low(:,k) <= low)
+            existing = sol.low(:, k);
+            existingInclusive = sol.low_inclusive(:, k);
+            if isContained(existing, existingInclusive, ...
+                    candidate, inclusive)
+                sol.low(:, k) = [];
+                sol.low_inclusive(:, k) = [];
+            elseif isContained(candidate, inclusive, ...
+                    existing, existingInclusive)
                 return;
             end
         end
-        sol.low = [sol.low low];
+        sol.low(:, end + 1) = candidate;
+        sol.low_inclusive(:, end + 1) = inclusive;
     end
+
+    function result = isContained(leftLower, leftInclusive, ...
+            rightLower, rightInclusive)
+        strictlyAbove = leftLower > rightLower + tolerance;
+        equalBound = abs(leftLower - rightLower) <= tolerance;
+        compatibleEquality = ~leftInclusive | rightInclusive;
+        result = all(strictlyAbove | (equalBound & compatibleEquality));
+    end
+end
+
+function result = composeMaxEpsilon(a, x)
+    xByRows = repmat(x.', size(a, 1), 1);
+    terms = zeros(size(a));
+    active = xByRows > a;
+    terms(active) = xByRows(active);
+    result = max(terms, [], 2);
 end
