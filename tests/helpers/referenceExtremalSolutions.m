@@ -40,13 +40,14 @@ function expected = referenceExtremalSolutions(composition, a, b, inequalities, 
     function enumerateCoordinate(j)
         if j > size(a, 2)
             composed = double(feval(composition, a, fuzzyMatrix(current)));
+            tolerance = 1e-12;
             switch inequalities
                 case -1
-                    isFeasible = all(composed <= b);
+                    isFeasible = all(composed <= b + tolerance);
                 case 0
-                    isFeasible = all(composed == b);
+                    isFeasible = all(abs(composed - b) <= tolerance);
                 case 1
-                    isFeasible = all(composed >= b);
+                    isFeasible = all(composed >= b - tolerance);
                 otherwise
                     error('referenceExtremalSolutions:InvalidInequality', ...
                         'Inequalities must be -1, 0, or 1.');
