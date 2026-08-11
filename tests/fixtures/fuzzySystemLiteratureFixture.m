@@ -9,6 +9,7 @@ classdef fuzzySystemLiteratureFixture < matlab.unittest.fixtures.Fixture
         MaxMin
         MinMax
         MaxProduct
+        Godel
     end
 
     methods
@@ -95,6 +96,24 @@ classdef fuzzySystemLiteratureFixture < matlab.unittest.fixtures.Fixture
                     0.5 0.0  0.0  0.6  0.0; ...
                     0.0 0.25 0.25 0.0  0.0; ...
                     0.0 0.0  0.0  0.0  0.0]) ...
+            );
+
+            % Literature-derived Gödel example. Perfilieva and Noskova,
+            % "System of fuzzy relation equations with inf-implication
+            % composition: Complete set of solutions", Fuzzy Sets and
+            % Systems 159 (2008), 2256-2271, Proposition 1 and Example 7.
+            % https://doi.org/10.1016/j.fss.2007.12.012
+            %
+            % Example 7 prints this coefficient vector for Product and
+            % Lukasiewicz algebras. Specializing the paper's Proposition 1
+            % to the Gödel t-norm gives least_j=min(a_j,b). Direct Gödel
+            % implication then gives the single maximal vector below.
+            fixture.Godel = struct( ...
+                'source', 'Perfilieva and Noskova (2008), Proposition 1 / Example 7', ...
+                'a', fuzzyMatrix([0.3 0.5 0.8]), ...
+                'b', fuzzyMatrix(0.5), ...
+                'least', fuzzyMatrix([0.3; 0.5; 0.5]), ...
+                'maximal', fuzzyMatrix([1; 1; 0.5]) ...
             );
         end
     end
